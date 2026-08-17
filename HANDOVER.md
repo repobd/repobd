@@ -2,7 +2,7 @@
 
 ## Current state
 
-RepoBD is at pre-implementation / requirements-definition stage.
+RepoBD requirements and initial development-policy documents have been reviewed by the user and are approved as the baseline for MVP implementation.
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -61,6 +61,18 @@ See `docs/BUILD_NATIVE_DEPENDENCY.md` before adding dependencies.
 
 Security-sensitive tasks may escalate Claude Code to Opus 5 and Codex to maximum available effort.
 
-## Next step
+## Implementation sequence
 
-Complete and review the initial authoritative documentation. Do not scaffold Worker/D1/CLI until the user has reviewed the requirements set.
+Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
+
+Current phase: **Phase 0 — repository scaffold only**.
+
+Phase 0 must not implement product behavior. It may only establish the smallest runnable TypeScript/CLI/Cloudflare test scaffold required for later phases. No production Cloudflare resource creation or deployment is allowed without explicit user approval.
+
+## Next action
+
+1. Pull the latest documentation locally.
+2. Open `/Users/shinya/Desktop/repobd` in Herdr with the four-pane layout.
+3. Start Claude Code with Sonnet 5 and have it read the required bootstrap documents before proposing the Phase 0 plan.
+4. Start Codex with gpt-5.6-sol / High, read-only, and have it confirm the same authoritative baseline before any review work.
+5. Do not implement Phase 1 crypto until Phase 0 is complete and reviewed.
