@@ -373,7 +373,7 @@ crypto / consume / path / logging 等の重要変更では、その時点の最�
 Claude Code:
 - 実装計画
 - 小さな単位で実装
-- test / typecheck / lint
+- test / typecheck / build（lint ツールは未導入。YAGNIに従い必要になるまで追加しない）
 - Codex 指摘修正
 
 Codex:

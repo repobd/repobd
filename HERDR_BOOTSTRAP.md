@@ -42,11 +42,27 @@
 
 ## Role split
 
-- Claude Code: plan, implement, test, respond to review findings.
-- Codex: independent read-only review, adversarial/security review, scope and dependency review.
-- Test terminal: run tests/typecheck/lint/security-negative cases.
+- Claude Code: plan, implement (within an approved cycle), test, send the
+  working tree to Codex, and report the result. Does not edit files in
+  response to a Codex finding — of any severity — without a new, explicit
+  user authorization.
+- Codex: independent read-only review, adversarial/security review, scope
+  and dependency review. Never edits or repairs files.
+- Test terminal: run tests/typecheck/security-negative cases (no lint tool is installed; see `docs/TEST_STRATEGY.md`).
 - Runtime terminal: `wrangler dev`, local Worker/D1 runtime, local logs.
-- User: approves important design decisions, commit, push, deploy, npm publish, and security-boundary changes.
+- User: approves important design decisions, commit, push, deploy, npm
+  publish, security-boundary changes, and every write cycle that follows a
+  Codex review result. See the "Human authorization gate" in
+  `docs/AI_WORKFLOW.md`.
+
+## Herdr automation boundary
+
+Herdr may automatically chain: Claude Code's approved implementation →
+validation → review request to the designated Codex pane → Codex result
+returned to Claude Code.
+
+Herdr must not automatically chain: Codex result → Claude Code repair. A
+human authorizes that transition every time.
 
 ## Model escalation
 

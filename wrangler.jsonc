@@ -1,0 +1,7 @@
+{
+  // Local development only. No production resources are bound here.
+  // D1 / KV / secrets bindings are added in later phases with explicit approval.
+  "name": "repobd-worker",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-11"
+}

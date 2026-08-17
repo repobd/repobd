@@ -38,3 +38,14 @@ After implementation:
 - Run only the validation appropriate to the current stage, as defined in `docs/AI_WORKFLOW.md`.
 - Report changed files, tests run, known limitations, and stop point.
 - Do not commit, push, deploy, or publish without explicit user approval.
+
+After a Codex review:
+
+- Send the completed working tree to the designated Codex reviewer, read
+  back the result, and report it to the user.
+- Stop. Do not edit any file in response to a Codex finding — of any
+  severity, including NIT — until the user explicitly authorizes the next
+  write cycle. See the "Human authorization gate" in `docs/AI_WORKFLOW.md`.
+- Do not schedule `/loop`, a delayed wakeup, or any other automatic
+  continuation that would cause a file edit after a Codex result without an
+  intervening human authorization.

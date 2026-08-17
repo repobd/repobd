@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pwd)",
+      "Bash(git status)",
+      "Bash(git status --short)",
+      "Bash(git diff)",
+      "Bash(git diff --check)",
+      "Bash(git remote -v)",
+      "Bash(git remote get-url origin)",
+      "Bash(git rev-parse HEAD)",
+      "Bash(git rev-parse --show-toplevel)",
+      "Bash(npm run typecheck)",
+      "Bash(npm test)",
+      "Bash(npm run build)",
+      "Bash(node dist/cli/index.js --help)",
+      "Bash(node dist/cli/index.js --version)",
+      "Bash(npx wrangler dev --local)"
+    ]
+  }
+}

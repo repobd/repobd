@@ -111,6 +111,9 @@ User approval is required before:
 - schema/migration application to production
 - npm publish
 - any change that alters a security invariant or threat-model boundary
+- any file edit made in response to a Codex review finding, regardless of
+  severity (BLOCKER, MAJOR, MINOR, or NIT) — see the "Human authorization
+  gate" in `docs/AI_WORKFLOW.md`
 
 ## Product principle
 

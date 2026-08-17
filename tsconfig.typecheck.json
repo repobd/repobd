@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022"],
+    "types": ["node"]
+  },
+  "include": [
+    "src/cli",
+    "test/cli.smoke.test.ts",
+    "test/vitest.cli.config.ts",
+    "test/vitest.worker.config.ts",
+    "vitest.config.ts"
+  ]
+}

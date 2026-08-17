@@ -1,0 +1,31 @@
+{
+  "name": "repobd",
+  "version": "0.0.0",
+  "private": true,
+  "description": "RepoBD CLI and Worker API",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "repobd": "dist/cli/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.typecheck.json && tsc -p src/worker/tsconfig.json",
+    "test": "vitest run",
+    "cli": "tsx src/cli/index.ts"
+  },
+  "dependencies": {
+    "commander": "15.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "0.21.3",
+    "@cloudflare/workers-types": "^5.20260811.1",
+    "@types/node": "22.20.1",
+    "tsx": "^4.19.2",
+    "typescript": "7.0.2",
+    "vitest": "4.1.10",
+    "wrangler": "4.123.0"
+  }
+}

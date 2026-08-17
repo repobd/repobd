@@ -117,10 +117,13 @@ Before commit:
 
 - full tests pass
 - typecheck passes
-- lint passes
 - build passes
 - `git diff --check` passes
 - Codex blocker = 0
 - Codex major = 0
+
+No lint tool is installed for RepoBD; do not add one merely to satisfy this
+document (YAGNI, see `docs/BUILD_NATIVE_DEPENDENCY.md`). Add lint only when a
+demonstrated need justifies the dependency.
 
 Security-sensitive changes require the relevant adversarial test group even when the normal happy-path tests pass.
