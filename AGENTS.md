@@ -115,6 +115,19 @@ User approval is required before:
   severity (BLOCKER, MAJOR, MINOR, or NIT) — see the "Human authorization
   gate" in `docs/AI_WORKFLOW.md`
 
+Only one AI agent performs repository work at a time, and no user approval
+overrides that — read-only inspection and investigation count as active
+work, so a concurrent Codex investigation is not permissible while Claude
+Code is active. While a Codex review is outstanding, Claude Code is idle:
+file edits are prohibited outright rather than merely gated on approval, and
+so is any other repository work, including polling the reviewer for its
+result. Review results are pushed to Claude Code, never pulled; if that
+delivery is unavailable the user reads the result directly. Receiving a
+result is message delivery, not permission to resume. Requesting review
+closes the implementation portion of that write cycle; the review must first
+complete or be explicitly cancelled. See "Single active agent per
+repository" and the "Review wait gate" in `docs/AI_WORKFLOW.md`.
+
 ## Product principle
 
 **Automate only what RepoBD can determine reliably. Never replace human uncertainty with machine guesswork.**

@@ -150,9 +150,15 @@ For every phase:
 2. Claude Code proposes a small implementation plan first.
 3. User approves scope where required.
 4. Claude Code implements the smallest change.
-5. Targeted tests/typecheck run.
-6. Codex performs read-only review from the chosen base commit.
-7. Blocker/major findings are fixed and re-reviewed.
+5. Targeted tests/typecheck run — completed before the review is requested.
+6. Codex performs read-only review from the chosen base commit. Claude Code
+   is idle for the whole review — no edits, no other repository work, no
+   polling for the result.
+7. Codex findings go to the user. Any repair, at any severity, requires
+   explicit human authorization for a new write cycle; re-review happens
+   only after that separately authorized fix cycle. See "Single active
+   agent per repository", the "Review wait gate", and the "Human
+   authorization gate" in `docs/AI_WORKFLOW.md`.
 8. Push/deploy/resource creation require explicit user approval.
 
 Model defaults:

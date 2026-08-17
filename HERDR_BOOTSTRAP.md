@@ -43,11 +43,16 @@
 ## Role split
 
 - Claude Code: plan, implement (within an approved cycle), test, send the
-  working tree to Codex, and report the result. Does not edit files in
-  response to a Codex finding — of any severity — without a new, explicit
-  user authorization.
+  working tree to Codex. Goes idle the moment the review request is sent —
+  no repository work and no polling for the result — until that review
+  finishes or is explicitly cancelled, and does not edit files in response
+  to a Codex finding, of any severity, without a new, explicit user
+  authorization.
 - Codex: independent read-only review, adversarial/security review, scope
-  and dependency review. Never edits or repairs files.
+  and dependency review. Never edits or repairs files, and never inspects
+  this repository while Claude Code is active — read-only investigation
+  still counts as active work, and no user request makes it concurrent.
+  Claude Code must go idle first.
 - Test terminal: run tests/typecheck/security-negative cases (no lint tool is installed; see `docs/TEST_STRATEGY.md`).
 - Runtime terminal: `wrangler dev`, local Worker/D1 runtime, local logs.
 - User: approves important design decisions, commit, push, deploy, npm
@@ -57,12 +62,35 @@
 
 ## Herdr automation boundary
 
-Herdr may automatically chain: Claude Code's approved implementation →
-validation → review request to the designated Codex pane → Codex result
-returned to Claude Code.
+Only one AI agent works on this repository at a time:
 
-Herdr must not automatically chain: Codex result → Claude Code repair. A
-human authorizes that transition every time.
+```text
+CC ACTIVE / Codex IDLE → CC IDLE / Codex ACTIVE → both IDLE
+  → (explicit user authorization) → CC ACTIVE / Codex IDLE
+```
+
+`CC ACTIVE / Codex ACTIVE` must never occur for this worktree, and no user
+approval can authorize it. Read-only inspection counts as active work.
+Panes may stay open; the inactive agent simply does no repository work.
+
+Review results are pushed, not polled: `CC → Codex` for the request,
+`Codex → CC` for the completed result. If direct delivery is unavailable
+the fallback is `Codex → user`, never Claude Code polling. Receiving a
+result is message delivery only — it does not reactivate Claude Code.
+
+Herdr may automatically chain: Claude Code's approved implementation →
+validation → review request to the designated Codex pane. The chain stops
+there.
+
+Two transitions are never automatic:
+
+- review request → any further Claude Code activity. Claude Code is idle
+  for as long as the review is outstanding, and does not poll for or fetch
+  the result ("Single active agent per repository", "Review wait gate").
+- Codex result → Claude Code repair. A human authorizes that transition
+  every time ("Human authorization gate").
+
+All are defined in `docs/AI_WORKFLOW.md`.
 
 ## Model escalation
 
