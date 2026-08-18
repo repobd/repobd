@@ -8,6 +8,7 @@ export default defineConfig({
       "cli.smoke.test.ts",
       "crypto.envelope.test.ts",
       "repo.binding.test.ts",
+      "repo.git.test.ts",
       "repo.identity.test.ts",
     ],
   },
