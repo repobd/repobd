@@ -4,5 +4,11 @@
     "lib": ["ES2022"],
     "types": ["@cloudflare/workers-types", "@cloudflare/vitest-pool-workers/types"]
   },
-  "include": [".", "../../test/worker.smoke.test.ts"]
+  "include": [
+    ".",
+    "../../test/cloudflare-test.d.ts",
+    "../../test/apply-migrations.ts",
+    "../../test/worker.smoke.test.ts",
+    "../../test/worker.d1.test.ts"
+  ]
 }

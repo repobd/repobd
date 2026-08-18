@@ -1,7 +1,15 @@
 {
-  // Local development only. No production resources are bound here.
-  // D1 / KV / secrets bindings are added in later phases with explicit approval.
+  // Local development only. No account id, no routes, no production
+  // resources. The D1 binding below deliberately omits `database_id`, which
+  // Wrangler does not require — supplying one would name a real remote
+  // database. Remote provisioning is a later, separately approved step.
   "name": "repobd-worker",
   "main": "src/worker/index.ts",
-  "compatibility_date": "2026-08-11"
+  "compatibility_date": "2026-08-11",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "repobd-local"
+    }
+  ]
 }
