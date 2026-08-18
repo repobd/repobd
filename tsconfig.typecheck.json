@@ -7,8 +7,11 @@
   "include": [
     "src/cli",
     "src/crypto",
+    "src/repo",
     "test/cli.smoke.test.ts",
     "test/crypto.envelope.test.ts",
+    "test/repo.binding.test.ts",
+    "test/repo.identity.test.ts",
     "test/vitest.cli.config.ts",
     "test/vitest.worker.config.ts",
     "vitest.config.ts"
