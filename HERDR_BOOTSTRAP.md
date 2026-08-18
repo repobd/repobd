@@ -73,10 +73,27 @@ CC ACTIVE / Codex IDLE → CC IDLE / Codex ACTIVE → both IDLE
 approval can authorize it. Read-only inspection counts as active work.
 Panes may stay open; the inactive agent simply does no repository work.
 
-Review results are pushed, not polled: `CC → Codex` for the request,
-`Codex → CC` for the completed result. If direct delivery is unavailable
-the fallback is `Codex → user`, never Claude Code polling. Receiving a
-result is message delivery only — it does not reactivate Claude Code.
+Herdr automates exactly one cross-agent transition — the review handoff:
+
+```text
+herdr agent list                      # resolve the reviewer at runtime
+herdr agent prompt <target> <text>    # submits text + Enter, invoking a turn
+```
+
+Resolve the target by agent kind; pane ids are not stable across sessions,
+so never hardcode one, and note an agent's `cwd` may be its session's start
+directory rather than the repository. `--timeout` requires `--wait`, and
+both govern the sender's wait only — submission has already happened, so a
+sender-side timeout does not mean the prompt failed to arrive.
+
+The result does not come back this way. Codex reports it in its own pane
+and the user carries it onward:
+
+```text
+Codex result → user → GPT analysis → human decision → optional new CC cycle
+```
+
+Claude Code never polls for it.
 
 Herdr may automatically chain: Claude Code's approved implementation →
 validation → review request to the designated Codex pane. The chain stops

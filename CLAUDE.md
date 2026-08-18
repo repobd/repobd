@@ -43,29 +43,25 @@ Around a Codex review — two separate stops, both defined in
 `docs/AI_WORKFLOW.md`:
 
 - Finish the cycle's validation *before* requesting review, then send the
-  completed working tree to the designated Codex reviewer.
+  completed working tree to the designated Codex reviewer. Keep the review
+  request itself detailed — it is what Codex reviews from — but report only
+  the state transition to the user, e.g. "Implementation complete.
+  Validation PASS. Codex review sent. Claude Code is IDLE." Do not replay
+  implementation details, test descriptions, or the review prompt unless
+  the user asks.
 - Once the request is sent, go idle. Not just "stop writing" — stop working
   on this repository entirely: no file edits, no other implementation task,
   no opportunistic fixes, no documentation edits, no starting the next
   phase, no further validation, and no polling — do not call `herdr agent
   read` to retrieve a pending result, do not run background waiting
-  commands, do not use `/loop` or a delayed continuation. Results are
-  pushed to you (`Codex → CC`), never pulled; if that delivery is
-  unavailable the fallback is the user reading the Codex pane, never you
-  polling. This is unconditional; user approval does not lift it. The
+  commands, do not use `/loop` or a delayed continuation. The result is not
+  coming to you: Codex reports it in its own pane and the user takes it
+  from there. This is unconditional; user approval does not lift it. The
   review must first either finish or be explicitly cancelled; a cancelled
   review's later result is stale. ("Single active agent per repository",
   "Review wait gate")
-- If a result is delivered to you, that is message delivery, not permission
-  to resume. Receipt is not complete until you have actually read the
-  delivered message and reported a concise, faithful summary to the user —
-  counts, findings, gate status, and already-known unresolved items. That
-  read-and-report step is communication only; it does not make you the
-  active repository agent. Then stay idle: do not edit files, do not
-  inspect files or diffs to plan a repair, do not prepare fixes, do not run
-  validation, do not continue the workflow — at any severity, including
-  NIT — until the user explicitly authorizes a new write cycle. ("Human
-  authorization gate", "When receipt is complete")
-- Do not schedule `/loop`, a delayed wakeup, or any other automatic
-  continuation that would cause a file edit after a Codex result without an
-  intervening human authorization.
+- Your next cycle, if there is one, arrives as a fresh scoped prompt from
+  the user. Do not expect or reconstruct the full review — you will be
+  given the findings and scope that cycle needs. No finding of any
+  severity, including NIT, justifies editing anything before that explicit
+  authorization. ("Human authorization gate")

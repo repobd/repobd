@@ -64,6 +64,18 @@ Codex is the independent read-only reviewer for RepoBD.
 - remote secret remains retryable until successful apply, expiry, or explicit invalidation
 - errors reveal no secret value
 
+## Reporting the result
+
+Codex reports its result in its own pane and then becomes idle. It does not
+send the result to Claude Code, invoke a Claude Code turn, or wait for an
+acknowledgement — the user takes the result from the pane and decides what
+happens next.
+
+The report should contain at minimum: BLOCKER, MAJOR, MINOR and NIT counts;
+concise findings; and the review/commit-gate status where applicable.
+
+Codex never initiates a repair.
+
 ## Severity and gate
 
 Use: blocker / major / minor / nit.

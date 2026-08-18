@@ -135,22 +135,22 @@ Documentation-only changes do not require the full application test suite, but s
 6. Codex performs independent read-only review. Claude Code does no
    repository work at all while that review is outstanding, including
    polling for the result.
-7. Codex pushes its result (BLOCKER/MAJOR/MINOR/NIT, any count, any
-   severity) to Claude Code and goes idle. Claude Code reports it to the
-   user without becoming active again. The write cycle ends here — see
+7. Codex reports its result (BLOCKER/MAJOR/MINOR/NIT, any count, any
+   severity) in its own pane and goes idle. The write cycle ends here — see
    "Human authorization gate" below.
-8. The user reviews the findings and explicitly authorizes the next write
-   cycle if further changes are needed. Claude Code does not edit files in
-   response to the findings before that authorization.
-9. Once authorized, Claude Code implements the approved fix as a new small
-   unit and the cycle repeats from step 4.
+8. The user takes the result, optionally works through it with GPT, and
+   decides. Claude Code does not edit files in response to the findings
+   before an explicit new authorization.
+9. If a change is needed, the user authorizes a fresh scoped cycle and the
+   cycle repeats from step 3.
 10. User approves commit/push/deploy as applicable.
 
 Lifecycle:
 
 ```text
 approved implementation → validation → Codex review request
-  → CC idle / Codex reviews → Codex result → human gate
+  → CC idle / Codex reviews → Codex result → both idle
+  → user → GPT analysis → human decision
   → explicit user authorization → next write cycle
 ```
 
@@ -188,10 +188,6 @@ anything:
 
 **Read-only work still counts as ACTIVE.** A read-only Codex investigation
 is not a neutral background activity — it is Codex being the active agent.
-
-Message delivery is *not* repository work. A completed Codex result being
-delivered to Claude Code is communication only, and does not authorize
-Claude Code to perform any repository operation.
 
 The inactive agent's Herdr pane and process may stay open; it simply must
 not work on this repository during the other agent's active phase. Nothing
@@ -240,6 +236,24 @@ successfully sent, Claude Code becomes idle and must not:
 Claude Code is not responsible for polling Codex or for retrieving the
 result. It stops.
 
+##### Handoff output is concise
+
+The review request sent to Codex stays as detailed as the review needs —
+implementation scope, changed files, validation results, security concerns,
+requested focus. That detail is *for Codex*, and must not be trimmed.
+
+What Claude Code shows the **user** at handoff is only the state
+transition, e.g.:
+
+```text
+Implementation complete. Validation PASS. Codex review sent. Claude Code is IDLE.
+```
+
+Do not replay to the user the implementation details, per-test
+descriptions, mutation-test tables, changed-file narratives, or the review
+prompt itself. The user can ask for any of it; volunteering all of it
+duplicates what already went to Codex.
+
 This is a workflow rule, not a permissions problem: do not widen
 `.claude/settings.json` to make `herdr agent read` or other Herdr commands
 automatically approved, and in particular never add a broad `herdr agent *`
@@ -250,117 +264,40 @@ allow rule.
 Codex inspects the approved review scope and performs allowed read-only
 validation. Codex never edits or repairs files.
 
-### Result delivery is push-based
+### After the review
 
-The review result flows in one direction each way:
+Codex reports its result in the Codex pane and becomes idle. It does not
+push the result to Claude Code, invoke a Claude Code turn, or wait for any
+acknowledgement — and Claude Code never fetches it. Claude Code must not
+poll for review completion, and no permission rule should be added to make
+such polling convenient.
 
-```text
-Claude Code → Codex    review request
-Codex → Claude Code    completed review result
-```
-
-The authoritative routing is therefore:
-
-```text
-normal:    CC → Codex → CC → user
-fallback:  CC → Codex → user
-never:     CC → Codex, then CC polling/pulling Codex
-```
-
-Direct user inspection of the Codex pane is the **fallback**, not the normal
-flow. In the normal flow the user learns the result because Claude Code
-reports what Codex pushed to it.
-
-Claude Code must never pull or poll for review completion. It is not
-responsible for repeatedly checking whether Codex has finished, and no
-permission rule should be added to make such polling convenient.
-
-When Codex completes its review:
-
-1. Codex pushes the completed result to Claude Code through the supported
-   Herdr mechanism.
-2. Codex becomes idle.
-3. Claude Code may receive the result — but receiving it does **not**
-   reactivate Claude Code for repository work.
-4. Claude Code remains idle.
-5. Claude Code may only surface the received result to the user.
-6. Claude Code must not edit files, inspect files in order to plan a
-   repair, prepare fixes, run validation, start another implementation, or
-   automatically continue the workflow.
-7. Both agents remain idle until the user explicitly decides what happens
-   next.
-
-The distinction that makes this work:
-
-> **Review result delivery is message delivery, not authorization to resume
-> repository work.**
-
-#### When receipt is complete
-
-A result landing in the Claude Code pane is not, by itself, delivery.
-
-> When Codex pushes a completed review result to Claude Code, review-result
-> receipt is complete only after Claude Code has read the delivered message
-> and reported a concise, faithful summary to the user.
-
-This read-and-report step is **communication only**. It does not count as
-ACTIVE repository work and does not make Claude Code the active agent — see
-"What counts as ACTIVE repository work" above.
-
-During read-and-report, Claude Code may only:
-
-- read the delivered review message,
-- report the BLOCKER / MAJOR / MINOR / NIT counts,
-- summarize the findings faithfully,
-- report the review-gate / commit-gate status,
-- list already-known unresolved items,
-- and state that it remains idle.
-
-During read-and-report, Claude Code must not:
-
-- inspect repository files in response to the findings,
-- inspect diffs to investigate repairs,
-- research or prepare possible fixes,
-- formulate implementation changes from repository state,
-- run validation,
-- edit files,
-- start another task or phase,
-- or resume repository work automatically.
-
-The state transition is:
+The result travels through people instead:
 
 ```text
-Codex ACTIVE → result pushed → Codex IDLE
-  → CC reads and reports the message (communication only)
-  → CC IDLE / Codex IDLE → human gate
+Codex result → user → GPT analysis → human decision
+  → (only if a change is needed) a scoped Claude Code prompt
+  → explicit user authorization → Claude Code active again
 ```
 
-Reading and summarizing a pushed result must never reactivate Claude Code as
-the active repository agent. After reporting, both agents remain idle and
-the next repository-work cycle requires explicit human authorization.
+GPT may analyse the findings, separate required fixes from optional
+refinements, recommend repairing or accepting, define the next small
+write-cycle scope, and draft the Claude Code prompt. GPT does not authorize
+repository writes; the user does.
 
-#### Fallback when direct delivery is unavailable
-
-Do not weaken the state machine because the preferred delivery mechanism is
-missing. If Herdr cannot reliably deliver a completed Codex result to Claude
-Code without Claude Code polling, the fallback is:
-
-```text
-Codex → user
-```
-
-The user inspects the Codex pane or result directly, Claude Code stays idle,
-and the user decides whether and when to give Claude Code a new instruction.
-
-The fallback is never "Claude Code polls Codex until a result exists." The
-priority is deterministic role separation, not automation convenience.
+Claude Code needs no memory of the review. Its chat history is not an
+authoritative record of RepoBD review history — the repository contents,
+the authoritative governance and security documents, the committed history,
+the current working tree, and the explicit scope of the current authorized
+cycle are. A new cycle receives only the findings, constraints, and scope
+that cycle needs, never the full Codex transcript. That keeps context small
+and stops stale findings from leaking into unrelated work.
 
 ### Human gate — both idle
 
-Once Codex has pushed its result and gone idle, and Claude Code has reported
-that result without resuming, both agents are idle. The user then decides
-what happens next. No agent begins another write cycle until the user
-explicitly authorizes it.
+Once Codex has reported its result and gone idle, both agents are idle. The
+user then decides what happens next. No agent begins another write cycle
+until the user explicitly authorizes it.
 
 ### Next cycle
 
@@ -381,8 +318,7 @@ becoming the active agent, so Claude Code must go idle first:
 5. Codex performs the explicitly requested read-only investigation.
 6. Claude Code stays idle throughout.
 7. Codex finishes and returns to idle.
-8. Codex pushes the result to Claude Code, or — only if that delivery is
-   unavailable — the user inspects it directly. Either way Claude Code
+8. Codex reports the result in its pane; the user reads it. Claude Code
    stays idle.
 9. Resuming Claude Code repository work requires the appropriate explicit
    human authorization.
@@ -433,9 +369,8 @@ and that it must complete or be explicitly cancelled first.
 
 Claude Code is idle in this state, not merely non-writing. It does not poll
 the Codex pane, call `herdr agent read` in a loop, or run background waiting
-commands — see "Single active agent per repository" above. The result
-reaches Claude Code because Codex pushes it, not because Claude Code goes
-looking for it.
+commands — see "Single active agent per repository" above. The result goes
+to the user, not to Claude Code.
 
 All validation belonging to the approved implementation cycle must be
 completed *before* the review request is sent, not while the review is
@@ -465,11 +400,11 @@ agents to be active at once.
 
 ### State C — the Codex review completed normally
 
-The current write cycle ends. Codex pushes the result to Claude Code and
-goes idle; Claude Code reports it to the user and stays idle. No file edit
-may be made in response to any BLOCKER, MAJOR, MINOR, or NIT finding until
-the user explicitly authorizes a new write cycle. That transition is
-governed by the next section.
+The current write cycle ends. Codex reports the result in its pane and goes
+idle; Claude Code is already idle and stays that way. No file edit may be
+made in response to any BLOCKER, MAJOR, MINOR, or NIT finding until the user
+explicitly authorizes a new write cycle. That transition is governed by the
+next section.
 
 ## Human authorization gate
 
@@ -478,8 +413,9 @@ authorized Claude Code to automatically fix Codex findings — that
 authorization is revoked. No severity level (BLOCKER, MAJOR, MINOR, or NIT)
 is an exception.
 
-Governing principle: **automate observation, validation, and review
-delivery; a human authorizes every new write cycle after a Codex review.**
+Governing principle: **automation covers implementation, validation, and
+the Claude Code → Codex review handoff. Codex completing its review ends AI
+automation: both agents go idle, and a human decides what happens next.**
 
 What may happen automatically (Herdr / Claude Code), without a new user
 round-trip:
@@ -494,16 +430,15 @@ round-trip:
 4. Claude Code sends the completed working tree to the designated Herdr
    Codex reviewer, exactly once per cycle. Claude Code goes idle here, per
    the "Review wait gate" and "Single active agent per repository" above.
-5. Codex reviews while Claude Code stays idle, then pushes the result to
-   Claude Code, which reports it to the user — Claude Code never fetches it
-   on its own.
+5. Codex reviews while Claude Code stays idle, then reports its result in
+   its own pane for the user — Claude Code neither receives nor fetches it.
 
 What requires explicit user authorization before it happens:
 
 - Any file edit made in response to a Codex finding, regardless of
   severity (BLOCKER, MAJOR, MINOR, or NIT).
-- Starting a new write cycle after a Codex result has been received, or
-  after a review was explicitly cancelled.
+- Starting a new write cycle after a review has completed, or after one was
+  explicitly cancelled.
 - Scheduling `/loop`, a delayed wakeup, or any other automatic continuation
   that would cross this gate (i.e. that would cause a file edit to happen
   after a Codex result without an intervening human authorization).
@@ -513,12 +448,11 @@ outstanding. While a review is outstanding, the "Review wait gate" above
 applies instead and prohibits edits outright — user authorization does not
 enter into it.
 
-Receipt of a Codex review result always ends the current write cycle.
-Claude Code stops, reports the findings verbatim (or a faithful summary) to
-the user, and waits. It does not infer authorization from the content or
-severity of the findings, from its own prior messages, or from anything
-other than an explicit instruction from the user given after the result was
-reported.
+A completed review always ends the current write cycle. Claude Code has no
+part in that step — it is already idle and has no responsibility to receive
+or relay the result. It does not infer authorization from findings it may
+happen to see, from its own prior messages, or from anything other than an
+explicit instruction the user gives to start a new cycle.
 
 ### Codex boundary
 

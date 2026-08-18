@@ -65,14 +65,45 @@ Security-sensitive tasks may escalate Claude Code to Opus 5 and Codex to maximum
 
 Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
 
-Current phase: **Phase 0 — repository scaffold only**.
+Completed:
 
-Phase 0 must not implement product behavior. It may only establish the smallest runnable TypeScript/CLI/Cloudflare test scaffold required for later phases. No production Cloudflare resource creation or deployment is allowed without explicit user approval.
+- **Phase 0 — repository scaffold** (`94d96d1`). Minimal TypeScript
+  workspace: CLI and Worker skeletons, Vitest, local-only Wrangler config.
+  No product behavior, no production Cloudflare resources.
+- **Phase 1 — crypto envelope, local-only proof** (`7e4b30c`). Client-side
+  AES-256-GCM in `src/crypto/envelope.ts`, not yet wired into the CLI or
+  Worker. Final Codex security review: blocker 0 / major 0 / minor 0 /
+  nit 0, PASS.
+
+In progress:
+
+- **Governance hardening.** The AI development workflow is being finalized
+  in `docs/AI_WORKFLOW.md` and the surrounding documents.
+
+Not started:
+
+- **Phase 2 — Worker + D1 transport.** Blocked until the governance
+  cleanup is reviewed and accepted. No D1 schema, migrations, storage,
+  transport, TTL/consume behavior, or Cloudflare resources yet.
+
+## Development workflow
+
+Human-mediated, one active AI agent at a time:
+
+```text
+CC → Codex → user → GPT analysis → human decision → optional next CC cycle
+```
+
+Claude Code implements only an explicitly authorized cycle, sends the
+review request to Codex, then goes idle. Codex reviews read-only and
+reports in its own pane. Review results do not return to Claude Code, and
+Claude Code never polls for them. Every new write cycle needs explicit user
+authorization. See `docs/AI_WORKFLOW.md` for the authoritative detail.
 
 ## Next action
 
-1. Pull the latest documentation locally.
-2. Open `/Users/shinya/Desktop/repobd` in Herdr with the four-pane layout.
-3. Start Claude Code with Sonnet 5 and have it read the required bootstrap documents before proposing the Phase 0 plan.
-4. Start Codex with gpt-5.6-sol / High, read-only, and have it confirm the same authoritative baseline before any review work.
-5. Do not implement Phase 1 crypto until Phase 0 is complete and reviewed.
+1. Complete the governance cleanup review and accept it.
+2. Only then plan Phase 2 against `docs/IMPLEMENTATION_PLAN.md`.
+
+Production Cloudflare resource creation and deployment still require
+explicit user approval.
