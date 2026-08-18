@@ -1,5 +1,9 @@
 import { SELF, env } from "cloudflare:test";
-import { claimSecret } from "../src/worker/secrets.js";
+import {
+  claimSecret,
+  consumeSecret,
+  releaseSecret,
+} from "../src/worker/secrets.js";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   ENVELOPE_ALG,
@@ -70,6 +74,14 @@ async function createSecret(
 
 function claim(id: string, claimId: string): Promise<Response> {
   return post(`/api/secrets/${id}/claim`, { claim_id: claimId });
+}
+
+function consume(id: string, claimId: string): Promise<Response> {
+  return post(`/api/secrets/${id}/consume`, { claim_id: claimId });
+}
+
+function release(id: string, claimId: string): Promise<Response> {
+  return post(`/api/secrets/${id}/release`, { claim_id: claimId });
 }
 
 async function row(id: string) {
@@ -482,6 +494,453 @@ describe("expiry boundary (deterministic)", () => {
 
     expect(result.ok).toBe(true);
     expect(result.ok === true && result.claimExpiresAt).toBe(now + 1000);
+  });
+});
+
+describe("POST /api/secrets/:id/consume", () => {
+  async function claimed(): Promise<{
+    id: string;
+    token: string;
+    envelope: string;
+  }> {
+    const envelope = await makeEnvelope();
+    const id = await createSecret(envelope);
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+    return { id, token, envelope };
+  }
+
+  it("consumes a claimed secret held by the matching token", async () => {
+    const { id, token, envelope } = await claimed();
+
+    const response = await consume(id, token);
+    expect(response.status).toBe(204);
+    expect(await response.text()).toBe("");
+
+    const stored = await row(id);
+    expect(stored?.["state"]).toBe("consumed");
+    expect(stored?.["consumed_at"]).toEqual(expect.any(Number));
+    // The winning token stays so a retry can be recognised.
+    expect(stored?.["claim_id"]).toBe(token);
+    expect(stored?.["claim_expires_at"]).toBeNull();
+    expect(stored?.["envelope"]).toBe(envelope);
+  });
+
+  it("treats a same-token retry after a lost response as success", async () => {
+    const { id, token } = await claimed();
+
+    expect((await consume(id, token)).status).toBe(204);
+    const consumedAt = (await row(id))?.["consumed_at"];
+
+    // The client never saw the first response and repeats the request.
+    expect((await consume(id, token)).status).toBe(204);
+    // The transition already happened; the retry only learns about it.
+    expect((await row(id))?.["consumed_at"]).toBe(consumedAt);
+  });
+
+  it("refuses a different token on the idempotency path", async () => {
+    const { id, token } = await claimed();
+    expect((await consume(id, token)).status).toBe(204);
+
+    const response = await consume(id, capability());
+    expect(response.status).toBe(410);
+    expect((await response.json()) as unknown).toEqual({ error: "consumed" });
+    expect((await row(id))?.["claim_id"]).toBe(token);
+  });
+
+  it("refuses a token that never held the claim", async () => {
+    const { id, token } = await claimed();
+
+    const response = await consume(id, capability());
+    expect(response.status).toBe(409);
+    expect((await row(id))?.["state"]).toBe("claimed");
+    expect((await row(id))?.["claim_id"]).toBe(token);
+  });
+
+  it("refuses an unclaimed secret", async () => {
+    const id = await createSecret(await makeEnvelope());
+    expect((await consume(id, capability())).status).toBe(409);
+    expect((await row(id))?.["state"]).toBe("available");
+  });
+
+  it("refuses an expired secret", async () => {
+    const { id, token } = await claimed();
+    await env.DB.prepare("UPDATE secrets SET expires_at = ? WHERE id = ?")
+      .bind(Date.now() - 1, id)
+      .run();
+
+    expect((await consume(id, token)).status).toBe(410);
+    expect((await row(id))?.["state"]).toBe("claimed");
+  });
+
+  it("refuses an expired lease", async () => {
+    const { id, token } = await claimed();
+    await env.DB.prepare("UPDATE secrets SET claim_expires_at = ? WHERE id = ?")
+      .bind(Date.now() - 1, id)
+      .run();
+
+    expect((await consume(id, token)).status).toBe(409);
+    expect((await row(id))?.["state"]).toBe("claimed");
+  });
+
+  it("returns not_found for an unknown id", async () => {
+    expect((await consume(capability(), capability())).status).toBe(404);
+  });
+
+  it.each(["short", "A".repeat(23)])(
+    "rejects the malformed id %s",
+    async (id) => {
+      expect((await consume(encodeURIComponent(id), capability())).status).toBe(
+        404,
+      );
+    },
+  );
+
+  it("rejects a malformed claim token", async () => {
+    const { id } = await claimed();
+    expect((await consume(id, "short")).status).toBe(400);
+    expect((await row(id))?.["state"]).toBe("claimed");
+  });
+});
+
+describe("POST /api/secrets/:id/release", () => {
+  it("returns a claimed secret to the available pool", async () => {
+    const envelope = await makeEnvelope();
+    const id = await createSecret(envelope);
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+
+    const response = await release(id, token);
+    expect(response.status).toBe(204);
+
+    const stored = await row(id);
+    expect(stored?.["state"]).toBe("available");
+    expect(stored?.["claim_id"]).toBeNull();
+    expect(stored?.["claim_expires_at"]).toBeNull();
+    expect(stored?.["consumed_at"]).toBeNull();
+    expect(stored?.["envelope"]).toBe(envelope);
+  });
+
+  it("makes the secret claimable by a new token", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const first = capability();
+    const second = capability();
+
+    expect((await claim(id, first)).status).toBe(200);
+    expect((await release(id, first)).status).toBe(204);
+    expect((await claim(id, second)).status).toBe(200);
+    expect((await row(id))?.["claim_id"]).toBe(second);
+  });
+
+  it("refuses a token that does not hold the claim", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const holder = capability();
+    expect((await claim(id, holder)).status).toBe(200);
+
+    expect((await release(id, capability())).status).toBe(409);
+    expect((await row(id))?.["claim_id"]).toBe(holder);
+  });
+
+  // A released token must not keep power over the secret it let go.
+  it("does not let a stale token release a later claim", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const first = capability();
+    const second = capability();
+
+    expect((await claim(id, first)).status).toBe(200);
+    expect((await release(id, first)).status).toBe(204);
+    expect((await claim(id, second)).status).toBe(200);
+
+    const stale = await release(id, first);
+    expect(stale.status).toBe(409);
+
+    const stored = await row(id);
+    expect(stored?.["state"]).toBe("claimed");
+    expect(stored?.["claim_id"]).toBe(second);
+  });
+
+  it("treats a repeated release as success without changing anything", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+
+    expect((await release(id, token)).status).toBe(204);
+    expect((await release(id, token)).status).toBe(204);
+    expect((await row(id))?.["state"]).toBe("available");
+  });
+
+  it("does not resurrect a consumed secret", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+    expect((await consume(id, token)).status).toBe(204);
+
+    const response = await release(id, token);
+    expect(response.status).toBe(410);
+    expect((await response.json()) as unknown).toEqual({ error: "consumed" });
+    expect((await row(id))?.["state"]).toBe("consumed");
+  });
+
+  it("does not make an expired secret usable again", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+    await env.DB.prepare("UPDATE secrets SET expires_at = ? WHERE id = ?")
+      .bind(Date.now() - 1, id)
+      .run();
+
+    await release(id, token);
+    // Whatever release reported, expiry still dominates.
+    expect((await claim(id, capability())).status).toBe(410);
+    expect((await consume(id, token)).status).toBe(410);
+  });
+
+  it("returns not_found for an unknown id", async () => {
+    expect((await release(capability(), capability())).status).toBe(404);
+  });
+});
+
+describe("consumed is terminal", () => {
+  async function consumedSecret(): Promise<{ id: string; token: string }> {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+    expect((await consume(id, token)).status).toBe(204);
+    return { id, token };
+  }
+
+  it("refuses a further claim and returns no envelope", async () => {
+    const { id } = await consumedSecret();
+
+    const response = await claim(id, capability());
+    expect(response.status).toBe(410);
+    expect(await response.text()).toBe(JSON.stringify({ error: "consumed" }));
+  });
+
+  it("refuses a claim even from the consuming token", async () => {
+    const { id, token } = await consumedSecret();
+    expect((await claim(id, token)).status).toBe(410);
+    expect((await row(id))?.["state"]).toBe("consumed");
+  });
+
+  it("never leaves the consumed state", async () => {
+    const { id, token } = await consumedSecret();
+
+    await claim(id, token);
+    await claim(id, capability());
+    await release(id, token);
+    await release(id, capability());
+    await consume(id, capability());
+
+    expect((await row(id))?.["state"]).toBe("consumed");
+  });
+});
+
+describe("remote lifecycle", () => {
+  it("runs create -> claim -> release -> claim -> consume -> retry", async () => {
+    const envelope = await makeEnvelope();
+    const id = await createSecret(envelope);
+    const a = capability();
+    const b = capability();
+
+    // A takes it, then gives it back without consuming.
+    expect((await claim(id, a)).status).toBe(200);
+    expect((await release(id, a)).status).toBe(204);
+    expect((await row(id))?.["state"]).toBe("available");
+
+    // B takes it and consumes.
+    const claimed = await claim(id, b);
+    expect(claimed.status).toBe(200);
+    expect(((await claimed.json()) as { envelope: string }).envelope).toBe(
+      envelope,
+    );
+    expect((await consume(id, b)).status).toBe(204);
+
+    // Nothing further can obtain it, but B's retry is still safe.
+    expect((await claim(id, capability())).status).toBe(410);
+    expect((await consume(id, b)).status).toBe(204);
+    expect((await release(id, b)).status).toBe(410);
+    expect((await row(id))?.["state"]).toBe("consumed");
+  });
+
+  // The remote states the later apply flow depends on: a claim that is never
+  // consumed must leave the secret recoverable.
+  it("does not consume when the claimant simply stops", async () => {
+    const id = await createSecret(await makeEnvelope());
+    expect((await claim(id, capability())).status).toBe(200);
+
+    const stored = await row(id);
+    expect(stored?.["state"]).toBe("claimed");
+    expect(stored?.["consumed_at"]).toBeNull();
+  });
+
+  it("makes an abandoned claim reclaimable once the lease lapses", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const abandoned = capability();
+    expect((await claim(id, abandoned)).status).toBe(200);
+
+    await env.DB.prepare("UPDATE secrets SET claim_expires_at = ? WHERE id = ?")
+      .bind(Date.now() - 1, id)
+      .run();
+
+    const next = capability();
+    expect((await claim(id, next)).status).toBe(200);
+    expect((await row(id))?.["claim_id"]).toBe(next);
+    expect((await row(id))?.["consumed_at"]).toBeNull();
+  });
+});
+
+describe("diagnostic reads fetch no unnecessary token", () => {
+  /**
+   * Records the SQL each statement is prepared with, then delegates to the
+   * real database — no behaviour is stubbed, so these tests observe the
+   * genuine queries rather than a mock's idea of them.
+   */
+  function recording(db: D1Database, queries: string[]): D1Database {
+    return new Proxy(db, {
+      get(target, property, receiver) {
+        if (property === "prepare") {
+          return (query: string) => {
+            queries.push(query);
+            return target.prepare(query);
+          };
+        }
+        const value = Reflect.get(target, property, receiver) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+  }
+
+  /**
+   * The selected columns of each SELECT, normalised, ignoring any WHERE that
+   * compares our own token. Asserting on the exact projection rather than
+   * searching for a substring is what makes these tests fail for `SELECT *`
+   * or for a differently-cased `CLAIM_ID`.
+   */
+  function selectedColumns(queries: string[]): string[] {
+    return queries
+      .map((query) => /\bselect\s+([^]*?)\s+from\b/i.exec(query)?.[1])
+      .filter((projection): projection is string => projection !== undefined)
+      .map((projection) =>
+        projection.replace(/\s+/g, " ").trim().toLowerCase(),
+      );
+  }
+
+  /** Fails for a wildcard projection or for `claim_id` in any letter case. */
+  function expectNoBearerToken(projections: string[]): void {
+    expect(projections.length).toBeGreaterThan(0);
+    for (const projection of projections) {
+      expect(projection).not.toBe("*");
+      expect(projection.split(",").map((column) => column.trim())).not.toContain(
+        "claim_id",
+      );
+    }
+  }
+
+  async function heldByAnother(): Promise<string> {
+    const id = await createSecret(await makeEnvelope());
+    expect((await claim(id, capability())).status).toBe(200);
+    return id;
+  }
+
+  it("does not select claim_id when a competing claim fails", async () => {
+    const id = await heldByAnother();
+    const queries: string[] = [];
+
+    const result = await claimSecret(
+      recording(env.DB, queries),
+      id,
+      capability(),
+      Date.now(),
+    );
+    expect(result.ok).toBe(false);
+
+    const projections = selectedColumns(queries);
+    expectNoBearerToken(projections);
+    // The batched read of what the caller now owns, then the diagnostic.
+    expect(projections).toEqual(["envelope, claim_expires_at", "state, expires_at"]);
+  });
+
+  it("does not select claim_id when a release fails", async () => {
+    const id = await heldByAnother();
+    const queries: string[] = [];
+
+    const result = await releaseSecret(
+      recording(env.DB, queries),
+      id,
+      capability(),
+    );
+    expect(result.ok).toBe(false);
+
+    const projections = selectedColumns(queries);
+    expectNoBearerToken(projections);
+    expect(projections).toEqual(["state"]);
+  });
+
+  it("does select claim_id when recognising a consume retry", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    expect((await claim(id, token)).status).toBe(200);
+    expect((await consume(id, token)).status).toBe(204);
+
+    const queries: string[] = [];
+    const result = await consumeSecret(
+      recording(env.DB, queries),
+      id,
+      token,
+      Date.now(),
+    );
+
+    // The retry can only be recognised by comparing against the stored token.
+    expect(result.ok).toBe(true);
+    expect(selectedColumns(queries)).toEqual(["state, expires_at, claim_id"]);
+  });
+});
+
+// Boundaries the HTTP layer cannot pin down, driven directly so `now` is exact.
+describe("consume boundaries (deterministic)", () => {
+  async function seed(
+    expiresAt: number,
+    claimExpiresAt: number,
+  ): Promise<{ id: string; token: string }> {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    await env.DB.prepare(
+      `UPDATE secrets SET state='claimed', claim_id=?, claim_expires_at=?, expires_at=? WHERE id=?`,
+    )
+      .bind(token, claimExpiresAt, expiresAt, id)
+      .run();
+    return { id, token };
+  }
+
+  // The lease deliberately outlives the secret here. A lease capped at expiry
+  // would hit both guards at once, so this is the only way to prove the
+  // secret-expiry guard on its own — and it is the invariant that matters:
+  // expiry dominates lease state.
+  it("treats now === expires_at as expired even with a live lease", async () => {
+    const { id, token } = await seed(1_000_000, 2_000_000);
+    const result = await consumeSecret(env.DB, id, token, 1_000_000);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toBe("expired");
+    expect((await row(id))?.["state"]).toBe("claimed");
+  });
+
+  it("treats now === claim_expires_at as a lapsed lease", async () => {
+    const { id, token } = await seed(2_000_000, 1_000_000);
+    const result = await consumeSecret(env.DB, id, token, 1_000_000);
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toBe("conflict");
+    expect((await row(id))?.["state"]).toBe("claimed");
+  });
+
+  it("allows the instant before both boundaries", async () => {
+    const { id, token } = await seed(2_000_000, 1_000_000);
+    const result = await consumeSecret(env.DB, id, token, 999_999);
+
+    expect(result.ok).toBe(true);
+    expect((await row(id))?.["state"]).toBe("consumed");
   });
 });
 

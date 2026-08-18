@@ -1,12 +1,23 @@
-// RepoBD Worker API — Phase 2B: create and claim.
+// RepoBD Worker API — the remote secret lifecycle: create, claim, consume,
+// release.
 //
 // The server stores ciphertext and non-secret metadata only. It never
 // receives a decryption key, never decrypts, and never logs envelope
 // contents. See docs/SECURITY_INVARIANTS.md.
 //
-// Consume and release are Phase 2C and are deliberately absent.
+// Claiming takes a lease and returns the envelope; it does not consume.
+// Consume marks a secret used, but does not prove the receiver applied it —
+// that guarantee belongs to the later local apply flow, which calls consume
+// only after verifying its own write. Release hands an unused claim back.
 
-import { canonicalizeEnvelope, claimSecret, createSecret } from "./secrets.js";
+import {
+  canonicalizeEnvelope,
+  claimSecret,
+  consumeSecret,
+  createSecret,
+  releaseSecret,
+  type ClaimFailure,
+} from "./secrets.js";
 import {
   MAX_REQUEST_BODY_BYTES,
   isCapability,
@@ -18,7 +29,7 @@ interface Env {
   DB: D1Database;
 }
 
-const CLAIM_PATH = /^\/api\/secrets\/([^/]+)\/claim$/;
+const SECRET_ACTION_PATH = /^\/api\/secrets\/([^/]+)\/(claim|consume|release)$/;
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {
@@ -69,35 +80,8 @@ async function handleCreate(request: Request, env: Env): Promise<Response> {
   return json({ id }, 201);
 }
 
-async function handleClaim(
-  request: Request,
-  env: Env,
-  id: string,
-): Promise<Response> {
-  // Reject a malformed capability before touching the database.
-  if (!isCapability(id)) {
-    return notFound();
-  }
-
-  const body = await readJsonBody(request);
-  if (body === null) {
-    return badRequest();
-  }
-
-  const claimId = body["claim_id"];
-  if (!isCapability(claimId)) {
-    return badRequest();
-  }
-
-  const result = await claimSecret(env.DB, id, claimId, Date.now());
-  if (result.ok) {
-    return json(
-      { envelope: result.envelope, claim_expires_at: result.claimExpiresAt },
-      200,
-    );
-  }
-
-  switch (result.reason) {
+function lifecycleFailure(reason: ClaimFailure): Response {
+  switch (reason) {
     case "not_found":
       return notFound();
     case "expired":
@@ -107,6 +91,78 @@ async function handleClaim(
     case "conflict":
       return fail("claim_conflict", 409);
   }
+}
+
+/**
+ * Every secret action takes the same shape: a capability in the path and a
+ * claim token in the body, both validated before the database is touched.
+ */
+async function readAction(
+  request: Request,
+  id: string,
+): Promise<{ claimId: string } | Response> {
+  if (!isCapability(id)) {
+    return notFound();
+  }
+  const body = await readJsonBody(request);
+  if (body === null) {
+    return badRequest();
+  }
+  const claimId = body["claim_id"];
+  if (!isCapability(claimId)) {
+    return badRequest();
+  }
+  return { claimId };
+}
+
+async function handleClaim(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  const action = await readAction(request, id);
+  if (action instanceof Response) {
+    return action;
+  }
+
+  const result = await claimSecret(env.DB, id, action.claimId, Date.now());
+  if (result.ok) {
+    return json(
+      { envelope: result.envelope, claim_expires_at: result.claimExpiresAt },
+      200,
+    );
+  }
+  return lifecycleFailure(result.reason);
+}
+
+async function handleConsume(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  const action = await readAction(request, id);
+  if (action instanceof Response) {
+    return action;
+  }
+
+  const result = await consumeSecret(env.DB, id, action.claimId, Date.now());
+  // 204 whether this call performed the transition or found its own earlier
+  // one already recorded — the caller cannot tell the two apart.
+  return result.ok ? new Response(null, { status: 204 }) : lifecycleFailure(result.reason);
+}
+
+async function handleRelease(
+  request: Request,
+  env: Env,
+  id: string,
+): Promise<Response> {
+  const action = await readAction(request, id);
+  if (action instanceof Response) {
+    return action;
+  }
+
+  const result = await releaseSecret(env.DB, id, action.claimId);
+  return result.ok ? new Response(null, { status: 204 }) : lifecycleFailure(result.reason);
 }
 
 export default {
@@ -137,15 +193,23 @@ export default {
       return handleCreate(request, env);
     }
 
-    const claimMatch = CLAIM_PATH.exec(pathname);
-    if (claimMatch !== null) {
+    const action = SECRET_ACTION_PATH.exec(pathname);
+    if (action !== null) {
       if (request.method !== "POST") {
         return new Response("method not allowed", {
           status: 405,
           headers: { Allow: "POST" },
         });
       }
-      return handleClaim(request, env, claimMatch[1] as string);
+      const id = action[1] as string;
+      switch (action[2]) {
+        case "claim":
+          return handleClaim(request, env, id);
+        case "consume":
+          return handleConsume(request, env, id);
+        case "release":
+          return handleRelease(request, env, id);
+      }
     }
 
     return new Response("not found", { status: 404 });
