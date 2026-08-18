@@ -26,7 +26,7 @@ export default defineConfig({
   ],
   test: {
     name: "worker",
-    include: ["worker.smoke.test.ts", "worker.d1.test.ts"],
+    include: ["worker.smoke.test.ts", "worker.d1.test.ts", "worker.secrets.test.ts"],
     setupFiles: ["./apply-migrations.ts"],
   },
 });

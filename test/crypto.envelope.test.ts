@@ -301,6 +301,48 @@ describe("envelope validation", () => {
     ).toThrow(EnvelopeFormatError);
   });
 
+  // AES-GCM appends a 128-bit tag, so a shorter ciphertext is malformed
+  // rather than merely small. These are shape checks — none of them needs to
+  // decrypt.
+  it("rejects an empty ciphertext", async () => {
+    const envelope = await encrypt(DUMMY_SECRET, await generateKey());
+    expect(() =>
+      parseEnvelope(serializeEnvelope({ ...envelope, ct: "" })),
+    ).toThrow(EnvelopeFormatError);
+  });
+
+  it.each([1, 8, 15])(
+    "rejects a %i-byte ciphertext, shorter than the tag",
+    async (byteLength) => {
+      const envelope = await encrypt(DUMMY_SECRET, await generateKey());
+      const truncated = encodeBase64Url(new Uint8Array(byteLength));
+      expect(() =>
+        parseEnvelope(serializeEnvelope({ ...envelope, ct: truncated })),
+      ).toThrow(EnvelopeFormatError);
+    },
+  );
+
+  it("accepts a ciphertext of exactly the tag length", async () => {
+    const envelope = await encrypt(DUMMY_SECRET, await generateKey());
+    const tagOnly = encodeBase64Url(new Uint8Array(16));
+    const parsed = parseEnvelope(
+      serializeEnvelope({ ...envelope, ct: tagOnly }),
+    );
+    expect(parsed.ct).toBe(tagOnly);
+  });
+
+  it("still accepts a ciphertext at the maximum", async () => {
+    const envelope = await encrypt(
+      "a".repeat(MAX_PLAINTEXT_BYTES),
+      await generateKey(),
+    );
+    // 65,536 plaintext bytes + 16-byte tag = 65,552 bytes.
+    expect(decodeBase64Url(envelope.ct)).toHaveLength(65_552);
+    expect(() =>
+      parseEnvelope(serializeEnvelope(envelope)),
+    ).not.toThrow();
+  });
+
   it("rejects a key that is not 32 bytes", async () => {
     const encoded = await exportKey(await generateKey());
     const shortKey = encodeBase64Url(decodeBase64Url(encoded).slice(0, 16));
