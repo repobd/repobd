@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -9,6 +17,7 @@ import {
   GIT_COMMANDS,
   REPOSITORY_SELECTION_ENV,
   childEnvironment,
+  removeFramingNewline,
   resolveCurrentRepoIdentity,
   type RepoResolutionFailureReason,
 } from "../src/repo/git.js";
@@ -281,6 +290,250 @@ describe("the result follows cwd, not the inherited environment", () => {
   });
 });
 
+describe("work tree root", () => {
+  // The root is where a secret would be written, so "which directory" is a
+  // security question, not a convenience one. Git answers it; RepoBD adds no
+  // discovery, no parent walk, and no canonicalization of its own.
+
+  async function rootOf(dir: string): Promise<string> {
+    const result = await resolveCurrentRepoIdentity(dir);
+    if (!result.ok) {
+      throw new Error(`expected resolution, got ${result.reason}`);
+    }
+    return result.root;
+  }
+
+  it("returns the repository top level", async () => {
+    const dir = await makeRepo("https://github.com/acme/widgets.git");
+    expect(await rootOf(dir)).toBe(realpathSync(dir));
+  });
+
+  it("returns an absolute path", async () => {
+    const dir = await makeRepo("https://github.com/acme/widgets.git");
+    expect(path.isAbsolute(await rootOf(dir))).toBe(true);
+  });
+
+  it("returns the top level when run from a nested subdirectory", async () => {
+    // The regression this pins: writing into whichever directory the user
+    // happened to `cd` into instead of the repository root.
+    const dir = await makeRepo("https://github.com/acme/widgets.git");
+    const nested = path.join(dir, "src", "deep", "deeper");
+    await mkdir(nested, { recursive: true });
+    const root = await rootOf(nested);
+    expect(root).toBe(realpathSync(dir));
+    expect(root).not.toBe(nested);
+  });
+
+  it("returns the linked worktree's own root, not the main one", async () => {
+    const main = await makeRepo("https://github.com/acme/widgets.git");
+    const worktree = path.join(root, `${path.basename(main)}-root-wt`);
+    git(main, "worktree", "add", "-q", worktree, "-b", "root-feature");
+    const resolved = await rootOf(worktree);
+    expect(resolved).toBe(realpathSync(worktree));
+    // Sharing Git metadata with the main worktree must not redirect the write
+    // into it.
+    expect(resolved).not.toBe(realpathSync(main));
+  });
+
+  it("returns the linked worktree's root from inside a nested subdirectory", async () => {
+    const main = await makeRepo("https://github.com/acme/widgets.git");
+    const worktree = path.join(root, `${path.basename(main)}-nested-wt`);
+    git(main, "worktree", "add", "-q", worktree, "-b", "nested-feature");
+    const nested = path.join(worktree, "app", "config");
+    await mkdir(nested, { recursive: true });
+    expect(await rootOf(nested)).toBe(realpathSync(worktree));
+  });
+
+  it("resolves symlinked directory components, so RepoBD needs no realpath", async () => {
+    // Documented empirically rather than assumed: Git returns a physical
+    // path, which is why this module adds no canonicalization machinery.
+    const dir = await makeRepo("https://github.com/acme/widgets.git");
+    const link = path.join(root, `${path.basename(dir)}-link`);
+    symlinkSync(dir, link);
+    expect(await rootOf(link)).toBe(realpathSync(dir));
+  });
+
+  it("is not returned for a bare repository", async () => {
+    const bare = await tempDir();
+    git(bare, "init", "-q", "--bare", ".");
+    // No work tree means nowhere to apply a secret; this stays a failure and
+    // so carries no root at all.
+    const result = await resolveCurrentRepoIdentity(bare);
+    expect(result.ok).toBe(false);
+    expect(result).not.toHaveProperty("root");
+  });
+
+  it("is not returned when identity resolution fails", async () => {
+    const dir = await makeRepo("https://git.internal.example/team/x.git");
+    const result = await resolveCurrentRepoIdentity(dir);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    // Root is read only after the identity is accepted, so an unsupported
+    // repository keeps exactly the reason it had before Phase 4B.
+    expect(result.reason).toBe("unsupported-origin");
+    expect(result).not.toHaveProperty("root");
+  });
+
+  it("follows cwd rather than an inherited GIT_DIR", async () => {
+    const other = await makeRepo("https://github.com/acme/other.git");
+    const target = await makeRepo("https://github.com/acme/widgets.git");
+    await withEnv({ GIT_DIR: path.join(other, ".git") }, async () => {
+      // The environment hardening has to cover the root as well: an inherited
+      // GIT_DIR redirecting it would send the write to another repository.
+      expect(await rootOf(target)).toBe(realpathSync(target));
+    });
+  });
+
+  it("follows cwd rather than an inherited GIT_WORK_TREE", async () => {
+    const other = await makeRepo("https://github.com/acme/other.git");
+    const target = await makeRepo("https://github.com/acme/widgets.git");
+    await withEnv(
+      { GIT_DIR: path.join(other, ".git"), GIT_WORK_TREE: other },
+      async () => {
+        expect(await rootOf(target)).toBe(realpathSync(target));
+      },
+    );
+  });
+});
+
+describe("work tree root pathname framing", () => {
+  // Git frames this output with exactly one LF. Everything before that byte is
+  // pathname content and is used exactly as it is — the one normalization
+  // RepoBD must never perform is the one that turns a directory into its
+  // sibling.
+
+  const CR = String.fromCharCode(13);
+  const LF = String.fromCharCode(10);
+
+  async function repoAt(dir: string): Promise<void> {
+    mkdirSync(dir, { recursive: true });
+    git(dir, "init", "-q", "-b", "main", ".");
+    git(dir, "config", "user.name", "RepoBD Test");
+    git(dir, "config", "user.email", "test@example.invalid");
+    git(dir, "commit", "-q", "--allow-empty", "-m", "base");
+    git(dir, "remote", "add", "origin", "https://github.com/acme/widgets.git");
+  }
+
+  it("returns an ordinary root unchanged", async () => {
+    const dir = await makeRepo("https://github.com/acme/widgets.git");
+    const result = await resolveCurrentRepoIdentity(dir);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.root).toBe(realpathSync(dir));
+    }
+  });
+
+  it("preserves ordinary spaces in a path rather than trimming them", async () => {
+    // The regression a generic `.trim()` would cause. Leading and trailing
+    // spaces are legal in a directory name and are part of the pathname.
+    const spaced = path.join(root, " my project ");
+    await repoAt(spaced);
+    const result = await resolveCurrentRepoIdentity(spaced);
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      return;
+    }
+    expect(result.root).toBe(realpathSync(spaced));
+    expect(path.basename(result.root)).toBe(" my project ");
+  });
+
+  it("refuses a work tree whose directory name ends in CR, rather than resolving its sibling", async () => {
+    // The reported defect. Git emits `<path>\r` + its framing LF. Removing a
+    // terminal CRLF as a pair would yield the sibling path — a real directory
+    // here — and RepoBD would write a secret into a repository nobody chose.
+    const sibling = path.join(root, "crcase");
+    const withCr = `${sibling}${CR}`;
+    await repoAt(withCr);
+    await repoAt(sibling);
+
+    const result = await resolveCurrentRepoIdentity(withCr);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      // Guard the assertion itself: if this ever resolves, it must at least
+      // never have become the sibling.
+      expect(result.root).not.toBe(realpathSync(sibling));
+      return;
+    }
+    expect(result.reason).toBe("git-failed");
+    expect(result).not.toHaveProperty("root");
+
+    // And nothing was written anywhere as a result of the refusal.
+    expect(readdirSync(withCr)).not.toContain(".env");
+    expect(readdirSync(sibling)).not.toContain(".env");
+  });
+
+  it("still resolves the sibling itself, so the refusal is about the CR", async () => {
+    const plain = path.join(root, "crcase-control");
+    await repoAt(plain);
+    const result = await resolveCurrentRepoIdentity(plain);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.root).toBe(realpathSync(plain));
+    }
+  });
+
+  it("refuses a work tree whose directory name contains LF", async () => {
+    // The other unsupported pathname character, and a real one: Git emits
+    // `…/a\nb` plus its framing LF, so only the last byte is framing and the
+    // embedded LF belongs to the name.
+    const embedded = path.join(root, `lfcase${LF}tail`);
+    await repoAt(embedded);
+
+    const result = await resolveCurrentRepoIdentity(embedded);
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.reason).toBe("git-failed");
+    expect(result).not.toHaveProperty("root");
+    expect(readdirSync(embedded)).not.toContain(".env");
+  });
+
+  it("removes exactly one framing LF, through the resolver's own helper", () => {
+    // Calls the production function the resolver uses. Restating the
+    // expression here would pin a copy of the rule rather than the rule.
+    expect(removeFramingNewline("/path/project\n")).toBe("/path/project");
+
+    // Ordinary spaces are content, not framing: nothing is trimmed.
+    expect(removeFramingNewline("/path/ my project \n")).toBe(
+      "/path/ my project ",
+    );
+
+    // Exactly one byte, and only LF. The CR is pathname content, so what comes
+    // back still carries it — which is what makes the resolver's own
+    // `[\r\n]` check refuse instead of silently resolving a sibling.
+    expect(removeFramingNewline(`/path/project${CR}\n`)).toBe(
+      `/path/project${CR}`,
+    );
+    expect(removeFramingNewline(`/path/a${CR}b\n`)).toBe(`/path/a${CR}b`);
+    expect(removeFramingNewline("/path/a\nb\n")).toBe("/path/a\nb");
+
+    // No framing byte: no path, rather than a guess at one.
+    expect(removeFramingNewline("/path/project")).toBeNull();
+    expect(removeFramingNewline("")).toBeNull();
+  });
+
+  it("refuses every pathname the helper hands back with CR or LF still in it", () => {
+    // Ties the two halves together: what the helper returns for these inputs
+    // is exactly what the resolver rejects, so neither can drift alone.
+    for (const raw of [
+      `/path/project${CR}\n`,
+      `/path/a${CR}b\n`,
+      "/path/a\nb\n",
+    ]) {
+      const pathname = removeFramingNewline(raw);
+      expect(pathname).not.toBeNull();
+      expect(/[\r\n]/.test(pathname as string)).toBe(true);
+    }
+    // And the supported ones carry neither.
+    for (const raw of ["/path/project\n", "/path/ my project \n"]) {
+      expect(/[\r\n]/.test(removeFramingNewline(raw) as string)).toBe(false);
+    }
+  });
+});
+
 describe("repository detection failures", () => {
   it("fails closed outside a Git repository", async () => {
     const dir = await tempDir();
@@ -414,9 +667,11 @@ describe("the raw origin URL never leaves the resolver", () => {
       return;
     }
     // A remote URL can carry a token in its userinfo, so the success object
-    // carries the identity and nothing else.
+    // carries the identity and the work tree root, and nothing else. A
+    // filesystem path is not identity and carries no credential; the URL
+    // still must not appear.
     expect(JSON.stringify(result)).not.toContain(SENSITIVE);
-    expect(Object.keys(result).sort()).toEqual(["ok", "repo"]);
+    expect(Object.keys(result).sort()).toEqual(["ok", "repo", "root"]);
     expect(result.repo.canonical).toBe("github.com/acme/widgets");
   });
 
@@ -443,8 +698,13 @@ describe("command safety", () => {
   );
 
   it("pins the complete Git command allowlist", () => {
-    // Asserted exactly, not by absence of known-bad verbs: a fourth command,
+    // Asserted exactly, not by absence of known-bad verbs: a fifth command,
     // or a changed argument, fails here until it is deliberately approved.
+    //
+    // `worktreeRoot` is the deliberate Phase 4B addition. It is read-only, it
+    // is the only way RepoBD learns where it may write, and it is the fourth
+    // and last entry v0.1 approves. `check-ignore` in particular is not here:
+    // the unignored-.env warning is deferred rather than smuggled in.
     expect(GIT_COMMANDS).toEqual({
       isInsideWorkTree: ["rev-parse", "--is-inside-work-tree"],
       configuredOriginUrls: [
@@ -454,8 +714,32 @@ describe("command safety", () => {
         "remote.origin.url",
       ],
       effectiveOriginUrl: ["remote", "get-url", "origin"],
+      worktreeRoot: ["rev-parse", "--show-toplevel"],
     });
-    expect(Object.keys(GIT_COMMANDS)).toHaveLength(3);
+    expect(Object.keys(GIT_COMMANDS)).toHaveLength(4);
+  });
+
+  it("keeps every allowlisted command read-only", () => {
+    const mutating = [
+      "commit",
+      "push",
+      "add",
+      "checkout",
+      "reset",
+      "merge",
+      "rebase",
+      "fetch",
+      "pull",
+      "clone",
+      "check-ignore",
+    ];
+    for (const args of Object.values(GIT_COMMANDS)) {
+      for (const verb of mutating) {
+        expect(args).not.toContain(verb);
+      }
+    }
+    // `config` appears only as a read: `--get-all`, never a write form.
+    expect(GIT_COMMANDS.configuredOriginUrls).toContain("--get-all");
   });
 
   it("reads origin config with NUL framing and reads one effective URL", () => {

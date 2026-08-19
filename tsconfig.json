@@ -7,5 +7,5 @@
     "outDir": "dist",
     "noEmit": false
   },
-  "include": ["src/cli", "src/crypto", "src/repo"]
+  "include": ["src/apply", "src/cli", "src/crypto", "src/repo"]
 }

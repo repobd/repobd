@@ -2,7 +2,7 @@
 // identity from Git, read-only.
 //
 // This is the only module in `src/repo` that performs I/O, and the I/O it
-// performs is three Git subprocesses that read. Git is asked rather than
+// performs is four Git subprocesses that read. Git is asked rather than
 // re-implemented: `.git/config` is never parsed here, `url.<base>.insteadOf`
 // is never expanded here, and no global or system configuration is inspected
 // by hand. `git remote get-url` already applies that rewriting, so what comes
@@ -13,9 +13,13 @@
 // and no shell is involved: `execFile` takes an executable and a fixed argv,
 // so there is nothing for a remote URL or a path to be interpolated into.
 //
-// What leaves this module is the canonical identity and nothing else. The
-// origin URL itself is deliberately not returned: a remote URL can carry a
-// token in its userinfo, and there is no product need for the raw string.
+// What leaves this module on success is the canonical repository identity and
+// the verified work tree root, and nothing else. The origin URL itself is
+// deliberately not returned: a remote URL can carry a token in its userinfo,
+// and there is no product need for the raw string. The root travels with the
+// identity rather than being resolvable on its own, so a caller cannot obtain
+// somewhere to write without having passed the identity check that decides
+// whether it may write at all.
 //
 // Nothing here contacts a network, resolves DNS, calls a provider API, checks
 // that a repository exists, or reads a secret. Identity comes from local Git
@@ -39,7 +43,7 @@ const GIT_EXECUTABLE = "git";
  *
  * Exported so the read-only boundary is a value a test can assert against
  * rather than a claim in a comment. The tests pin this object exactly, so a
- * fourth command — or a changed argument — fails them until it is
+ * fifth command — or a changed argument — fails them until it is
  * deliberately approved. Nothing is appended at call time.
  */
 export const GIT_COMMANDS = {
@@ -57,6 +61,21 @@ export const GIT_COMMANDS = {
   /** The single effective fetch URL, with Git's own `insteadOf` rewriting
    * applied. Deliberately without `--all`: this reads one value. */
   effectiveOriginUrl: ["remote", "get-url", "origin"],
+  /**
+   * The absolute path of the work tree RepoBD is standing in.
+   *
+   * Read-only, like the rest of this list. It answers "which directory is
+   * this repository's top level", which is the only thing a local apply may
+   * be addressed to — never the process's current directory, which is merely
+   * where someone happened to type the command.
+   *
+   * Git answers for the *current* work tree, so a linked worktree reports its
+   * own root rather than the main one it shares metadata with, and a nested
+   * subdirectory reports the top level above it. Git also returns a path with
+   * symlinked directory components already resolved, which is why RepoBD adds
+   * no canonicalization of its own.
+   */
+  worktreeRoot: ["rev-parse", "--show-toplevel"],
 } as const;
 
 /**
@@ -119,7 +138,21 @@ export type RepoResolutionFailureReason =
   | "git-failed";
 
 export type RepoResolution =
-  | { readonly ok: true; readonly repo: CanonicalRepo }
+  | {
+      readonly ok: true;
+      readonly repo: CanonicalRepo;
+      /**
+       * Absolute path of the work tree this identity was read from.
+       *
+       * It travels with the identity rather than being resolvable on its own,
+       * so a caller cannot obtain somewhere to write without having passed
+       * the identity check that decides whether it may write at all.
+       *
+       * Not secret: a filesystem path is not repository identity (invariant
+       * 11) and carries no credential, unlike a remote URL.
+       */
+      readonly root: string;
+    }
   | {
       readonly ok: false;
       readonly reason: RepoResolutionFailureReason;
@@ -252,15 +285,28 @@ function parseNulFramed(output: string): string[] | null {
   return output.slice(0, -1).split("\0");
 }
 
-/** Removes the single line ending Git appends, and nothing else. */
-function stripTerminalNewline(value: string): string {
-  if (value.endsWith("\r\n")) {
-    return value.slice(0, -2);
-  }
-  if (value.endsWith("\n")) {
-    return value.slice(0, -1);
-  }
-  return value;
+/**
+ * Removes the one LF Git frames its output with, or reports that it is not
+ * there. Returns null in that second case rather than guessing.
+ *
+ * Exactly one byte, and only LF. An earlier version removed a terminal CRLF
+ * as a pair, which is wrong here and was a real defect: on POSIX Git
+ * terminates this output with a single LF, so output ending `project\r\n`
+ * means the pathname is `project\r` and the framing byte is the LF — not that
+ * the pathname is `project` with a CRLF terminator. Removing both bytes turns
+ * one directory into its sibling, which for the work tree root means writing a
+ * secret somewhere nobody chose.
+ *
+ * Git's framing and the content it frames are kept distinct: this function
+ * removes framing, and callers decide what remaining content they accept. A
+ * CR left behind belongs to the pathname, and every caller here refuses it.
+ *
+ * Exported for the same reason as `GIT_COMMANDS`: the rule should be a thing
+ * a test can call rather than a thing a test restates. A test that reproduced
+ * this expression would pin its own copy and not this one.
+ */
+export function removeFramingNewline(output: string): string | null {
+  return output.endsWith("\n") ? output.slice(0, -1) : null;
 }
 
 /**
@@ -328,10 +374,14 @@ export async function resolveCurrentRepoIdentity(
   if (!effective.ok) {
     return gitFailure(effective.failure);
   }
-  const originUrl = stripTerminalNewline(effective.stdout);
+  // Only Git's framing LF is removed; a missing one is tolerated here, as it
+  // always has been, because the checks below reject anything unreadable.
+  const originUrl =
+    removeFramingNewline(effective.stdout) ?? effective.stdout;
   // Exactly one line ending was Git's. A line break still present belongs to
-  // the value itself, which no supported remote has and which would make the
-  // output ambiguous to read.
+  // the value itself — including a trailing CR, which would otherwise be
+  // normalized away into a URL the configuration does not contain — and no
+  // supported remote has one.
   if (/[\r\n]/.test(originUrl)) {
     return fail(
       "malformed-origin-url",
@@ -364,5 +414,32 @@ export async function resolveCurrentRepoIdentity(
     );
   }
 
-  return { ok: true, repo: canonical.repo };
+  // Read last, so every identity failure keeps the reason it already had and
+  // this runs only for a repository RepoBD would actually act on.
+  const toplevel = await runGit(cwd, GIT_COMMANDS.worktreeRoot);
+  if (!toplevel.ok) {
+    return gitFailure(toplevel.failure);
+  }
+  // Git frames this output with exactly one LF. Requiring it, rather than
+  // tolerating its absence, is what lets everything before it be treated as
+  // pathname content.
+  const root = removeFramingNewline(toplevel.stdout);
+  if (root === null) {
+    return fail("git-failed", "git produced unframed work tree root output");
+  }
+  // What is left is the pathname, used exactly as it is. A CR or LF still in
+  // it belongs to a directory name RepoBD does not support, and the only safe
+  // answer is to refuse: normalizing it would resolve to a *different*
+  // directory, and a misread root is a secret written somewhere nobody chose.
+  // Ordinary characters, spaces included, are untouched — nothing here trims.
+  //
+  // Reported as `git-failed` rather than as a new reason: the failure
+  // vocabulary is shared with the CLI's user-facing wording, and this slice
+  // does not change CLI files. The `detail` says precisely what happened, and
+  // the outcome — fail closed, no root, no apply — is the same either way.
+  if (root === "" || /[\r\n]/.test(root)) {
+    return fail("git-failed", "git produced an unreadable work tree root");
+  }
+
+  return { ok: true, repo: canonical.repo, root };
 }

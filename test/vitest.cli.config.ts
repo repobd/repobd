@@ -5,6 +5,10 @@ export default defineConfig({
     name: "node",
     environment: "node",
     include: [
+      "apply.env-file.test.ts",
+      "apply.payload.test.ts",
+      "apply.target.seam.test.ts",
+      "apply.target.test.ts",
       "cli.diagnostics.test.ts",
       "cli.guard.test.ts",
       "cli.link.test.ts",
