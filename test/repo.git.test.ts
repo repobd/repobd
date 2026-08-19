@@ -49,6 +49,35 @@ afterAll(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
+// Whitespace around an effective origin URL is malformed configuration, not a
+// spelling of the same remote. `canonicalizeSupportedRemote` trims its input
+// for paste-oriented use; this path must not borrow that leniency.
+describe("origin URL surrounding whitespace fails closed", () => {
+  it.each([
+    [" https://github.com/acme/alpha.git", "leading space"],
+    ["https://github.com/acme/alpha.git ", "trailing space"],
+    ["\thttps://github.com/acme/alpha.git", "leading tab"],
+    ["https://github.com/acme/alpha.git\t", "trailing tab"],
+    [" git@github.com:acme/alpha.git ", "surrounded scp-like"],
+  ])("rejects %s (%s)", async (url) => {
+    const dir = await makeRepo(url);
+    const result = await resolveCurrentRepoIdentity(dir);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("malformed-origin-url");
+    }
+  });
+
+  it("still accepts the same remote written without whitespace", async () => {
+    const dir = await makeRepo("https://github.com/acme/alpha.git");
+    const result = await resolveCurrentRepoIdentity(dir);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.repo.canonical).toBe("github.com/acme/alpha");
+    }
+  });
+});
+
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" });
 }

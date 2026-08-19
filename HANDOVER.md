@@ -71,20 +71,59 @@ Completed:
   workspace: CLI and Worker skeletons, Vitest, local-only Wrangler config.
   No product behavior, no production Cloudflare resources.
 - **Phase 1 — crypto envelope, local-only proof** (`7e4b30c`). Client-side
-  AES-256-GCM in `src/crypto/envelope.ts`, not yet wired into the CLI or
-  Worker. Final Codex security review: blocker 0 / major 0 / minor 0 /
-  nit 0, PASS.
+  AES-256-GCM in `src/crypto/envelope.ts`. Final Codex security review:
+  blocker 0 / major 0 / minor 0 / nit 0, PASS.
+- **Governance hardening.** `docs/AI_WORKFLOW.md` and the surrounding
+  documents are finalized and in force.
+- **Phase 2 — Worker + D1 short-lived ciphertext transport** (`de073a9`,
+  `28772ba`, `4e2733b`). Local D1 schema and migrations, create/claim/
+  consume/release lifecycle, claim leases, TTL, one-time semantics, and
+  request validation in `src/worker/`. Local-only: no production
+  Cloudflare resources exist and nothing is deployed.
+- **Phase 3A — hosted repository identity binding** (`8885e38`).
+  `src/repo/identity.ts` canonicalizes supported hosted remotes to
+  `<host>/<path>`; `src/repo/binding.ts` serializes, parses, and compares
+  the binding descriptor. Pure, no I/O.
+- **Phase 3B — safe local repository resolution** (`89f46f4`).
+  `src/repo/git.ts` reads the current repository's identity through three
+  read-only Git commands, strips repository-selection environment
+  variables from the child, and never returns the raw origin URL.
 
 In progress:
 
-- **Governance hardening.** The AI development workflow is being finalized
-  in `docs/AI_WORKFLOW.md` and the surrounding documents.
+- **Phase 3C — CLI guard integration.** Implemented and validated, awaiting
+  the full Phase 3 Codex security review. `src/cli/link.ts` parses and
+  builds delivery links, `src/cli/guard.ts` runs the ordered repository
+  check, `src/cli/secret-client.ts` is the only network code, and
+  `src/cli/commands.ts` wires `pull` and `send`. Not committed.
+
+  One correction cycle has been applied against the first Codex review
+  (blocker 0 / major 2 / minor 2): Git origin values with surrounding
+  whitespace now fail closed instead of being trimmed into validity; the
+  delivery link is read from a stdin prompt rather than argv; the fragment
+  grammar is exact (one `k`, one `b`, no repeats, no unknown fields); and
+  the secret id must match the Worker's canonical capability grammar.
 
 Not started:
 
-- **Phase 2 — Worker + D1 transport.** Blocked until the governance
-  cleanup is reviewed and accepted. No D1 schema, migrations, storage,
-  transport, TTL/consume behavior, or Cloudflare resources yet.
+- **Phase 4 — safe local apply.** `pull` currently claims and then
+  releases the delivery unused; decrypting, mapping, writing, and consume
+  all belong to Phase 4.
+- **Phase 5 — end-to-end send/pull UX.** `send` reports the repository a
+  link would be bound to; it does not yet encrypt or create a delivery.
+
+## Phase 3 guarantee, as implemented
+
+- Repository binding is a **context guardrail, not authentication**. The
+  binding is unsigned; a compromised OS, modified local Git, modified CLI,
+  or a deliberately rewritten fragment is out of scope.
+- Supported hosted profiles are **github.com, gitlab.com, bitbucket.org**;
+  their common HTTPS and SSH clone forms normalize to one identity.
+- Unsupported or ambiguous repository setups **fail closed**.
+- The exact repository check completes **before any network secret
+  retrieval**. A mismatch submits no claim and fetches no ciphertext.
+- The **server never receives repository identity** — it lives only in the
+  delivery link fragment.
 
 ## Development workflow
 
@@ -102,8 +141,9 @@ authorization. See `docs/AI_WORKFLOW.md` for the authoritative detail.
 
 ## Next action
 
-1. Complete the governance cleanup review and accept it.
-2. Only then plan Phase 2 against `docs/IMPLEMENTATION_PLAN.md`.
+1. Complete the full Phase 3 (3A + 3B + 3C) Codex security review.
+2. Decide on findings, then authorize any fix cycle explicitly.
+3. Only then plan Phase 4 against `docs/IMPLEMENTATION_PLAN.md`.
 
 Production Cloudflare resource creation and deployment still require
 explicit user approval.

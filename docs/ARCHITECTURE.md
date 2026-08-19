@@ -12,13 +12,19 @@ Cloudflare Worker API
 Cloudflare D1
 
 Receiver CLI
-  ↓ fetch ciphertext
+  ↓ parse delivery link locally
 local repo verification
+  ↓ exact match only
+fetch ciphertext (claim)
   ↓ local decrypt
 safe local write
   ↓ verified success
 consume / invalidate
 ```
+
+Repository verification precedes the network. A mismatch, an unreadable
+binding, or an unsupported local repository ends the run before a claim token
+is submitted or any ciphertext is fetched.
 
 ## Components
 
@@ -61,16 +67,15 @@ Initial record needs are small and short-lived.
 Likely fields:
 
 - id
-- ciphertext
-- crypto_version
-- repo_identity
-- environment
-- target_file
+- ciphertext (encrypted envelope)
 - expires_at
 - consumed_at / state
+- claim state
 - created_at
 
-Indexes and atomic-consume design must be reviewed before implementation.
+**Repository identity is not one of them.** The binding travels in the delivery
+link's fragment and is never transmitted, so no table column, request payload,
+server log, or server-side state holds it.
 
 ### CLI
 
@@ -78,8 +83,10 @@ Responsibilities:
 
 - `send` launcher/workflow
 - `pull` workflow
+- parse the delivery link locally
 - read current Git repo / origin
 - normalize repository identity
+- compare with the binding, before any network access
 - display context metadata
 - locally inspect repository facts for variable/target suggestions
 - local decrypt
@@ -88,18 +95,74 @@ Responsibilities:
 
 The CLI must not mutate Git or execute arbitrary follow-up commands.
 
+## Delivery link
+
+```text
+https://<repobd-host>/d/<secret-id>#k=<key>&b=<binding-json>
+```
+
+Everything before the `#` is what a request may be addressed to. Everything
+after it is client-side only: an HTTP client never transmits a fragment, so
+the decryption key and the repository binding stay on the two developers'
+machines.
+
+The binding is `{"bv":1,"repo":"<host>/<path>"}` — a version and a canonical
+repository identity, nothing more. It is **not signed and not bound to the
+ciphertext**: whoever holds the link can rewrite it, and already holds the key.
+It prevents the accident, not the attacker.
+
+The fragment grammar is exact: one `k`, one `b`, no repeated fields and no
+unknown fields. First-value-wins is deliberately not used — a link carrying two
+bindings would read as one repository and bind to another. The secret id must
+satisfy the same canonical capability grammar the Worker enforces (22
+characters, canonical base64url, no padding), checked locally.
+
+Parsing is local and fails closed: non-HTTPS links, embedded credentials, an
+unexpected query, a malformed path or secret id, a missing or invalid key, a
+duplicated or unknown fragment field, and a missing, malformed, or
+unknown-version binding all block. A missing binding is never treated as an
+unbound delivery.
+
+The link is **read from stdin at a prompt, never taken as a command-line
+argument** — argv is retained by shell history and visible in process
+listings, and the fragment carries the decryption key.
+
+If a link is supplied on the command line anyway, RepoBD must not reflect it
+back. All CLI diagnostics pass through one redacting boundary
+(`src/cli/diagnostics.ts`) installed on the argument parser before any command
+is defined, so every command inherits it. The rule is an allowlist: RepoBD's
+own command and option names print normally, and every other argv token — plus
+the value half of any `--opt=value` — is replaced with `<redacted>`. Tokens are
+never parsed or validated to decide this, so malformed input redacts as
+reliably as well-formed input. `repobd pull <link>` additionally gets a
+friendlier fixed message, which is UX rather than the boundary.
+
+Scope: this stops *RepoBD* from echoing the link. It does not stop the shell
+from recording a link that was typed as an argument — that value is already in
+shell history and process listings before RepoBD runs, which is why the
+supported flow is the prompt.
+
 ## Repository identity
 
-Use Git CLI first, rather than a Git abstraction library, unless a demonstrated need appears.
+Git CLI, read-only, three commands: is-inside-work-tree, the configured
+`remote.origin.url` values, and the effective `git remote get-url origin`.
+`.git/config` is not parsed by hand and `insteadOf` rewriting is left to Git.
+RepoBD never mutates Git.
 
-Likely facts:
+The effective origin URL is used exactly as Git returns it, minus the single
+terminal line ending. Surrounding whitespace makes it malformed and it fails
+closed rather than being trimmed into validity.
 
-- `git rev-parse --show-toplevel`
-- `git remote get-url origin`
+Canonical identity is `<lowercase-host>/<case-preserved-path>`. Supported
+hosted profiles in v0.1 are **github.com, gitlab.com, and bitbucket.org**; the
+common HTTPS, scp-like SSH, and `ssh://` clone spellings of one repository
+normalize to the same identity. Everything else — self-hosted servers,
+arbitrary SSH targets, `git://`, plain HTTP, non-default ports — **fails
+closed as unsupported**, as does a repository with no `origin` or with more
+than one configured origin URL.
 
-Normalize common equivalents, e.g. SSH vs HTTPS representation of the same remote.
-
-Do not use folder name/path as repository identity.
+Comparison is exact and case-sensitive. Folder name and absolute filesystem
+path are never repository identity.
 
 ## Environment
 

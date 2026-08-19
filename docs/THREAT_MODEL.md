@@ -14,6 +14,7 @@ RepoBD should defend against or reduce:
 - exposing plaintext secret content to the RepoBD server
 - exposing the decryption key to the RepoBD server
 - accidental plaintext leakage through CLI output, logs, errors, telemetry, or debug traces
+- durable exposure of the secret-bearing delivery link through shell history or process argument listings — the link is read from stdin, never from argv
 - unsafe writes outside approved target scope
 - path traversal
 - symlink-based target escapes
@@ -31,7 +32,11 @@ RepoBD v0.1 does not claim to defend against:
 - malware/keyloggers on sender or receiver machines
 - a malicious local user with filesystem/Git-config control
 - deliberate modification of `.git/config` to impersonate a repository
+- deliberate modification of the delivery link's binding fragment, which is
+  not signed and not bound to the ciphertext — whoever can edit it already
+  holds the decryption key
 - a malicious or compromised RepoBD CLI binary installed on the local machine
+- a modified local Git binary or Git configuration
 - compromised npm/Git distribution infrastructure
 - a repository whose code/content is itself malicious or incorrect
 - a sender who intentionally binds the wrong repository
@@ -46,6 +51,18 @@ RepoBD v0.1 does not claim to defend against:
 The v0.1 repository check relies on local Git metadata, primarily normalized `origin` remote information.
 
 This is intended to prevent accidental context mismatch, not to establish a cryptographic trust boundary against an attacker controlling the local machine.
+
+v0.1 supports common hosted repositories on **github.com, gitlab.com, and
+bitbucket.org**, normalizing their usual HTTPS and SSH clone spellings to one
+identity. Any other repository environment — self-hosted, arbitrary SSH, no
+`origin`, several origin URLs — **fails closed**: RepoBD blocks rather than
+guessing. That is a deliberate product boundary, because a wrong guess here is
+exactly the accident the tool exists to prevent.
+
+The check runs **before** any network secret retrieval. On a mismatch or an
+unresolvable repository, no claim token is submitted, no ciphertext is
+fetched, and nothing is consumed — so a blocked pull leaves the delivery
+untouched and still usable in the right place.
 
 Documentation and marketing must not overstate this property.
 
@@ -76,13 +93,14 @@ Server may know operational metadata required for delivery, such as:
 
 - record identifier
 - ciphertext
-- repository binding metadata
-- environment label
-- target metadata
-- timestamps/expiry/consume state
+- claim/consume state
+- timestamps/expiry
 - abuse/rate-limit metadata
 
-Server must not know plaintext secret content or the decryption key.
+Server must not know plaintext secret content, the decryption key, or
+**repository identity**. The binding travels only in the delivery link's
+fragment, which no HTTP client transmits, so it reaches no request payload,
+no D1 column, no server log, and no server-side state.
 
 ### Receiver CLI
 

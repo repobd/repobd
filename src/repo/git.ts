@@ -338,6 +338,19 @@ export async function resolveCurrentRepoIdentity(
       "origin URL contains an embedded line break",
     );
   }
+  // Beyond that one line ending, the effective URL must be exactly what Git
+  // returned. `canonicalizeSupportedRemote` trims its input because it also
+  // serves paste-oriented parsing, and that leniency must not be borrowed
+  // here: a configured origin of ` https://github.com/acme/alpha.git` is a
+  // malformed remote, not the same remote with a space. Trimming it into
+  // validity would let one repository have more than one accepted spelling
+  // in local configuration, so it fails closed instead.
+  if (originUrl !== originUrl.trim()) {
+    return fail(
+      "malformed-origin-url",
+      "origin URL has leading or trailing whitespace",
+    );
+  }
 
   const canonical = canonicalizeSupportedRemote(originUrl);
   if (!canonical.ok) {

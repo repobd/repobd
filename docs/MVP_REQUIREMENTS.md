@@ -21,14 +21,15 @@ Deliver encrypted secret text to the intended repository with minimal friction a
 
 1. Run `repobd pull` / `npx repobd pull` from the intended local repository.
 2. Paste the RepoBD delivery URL into the CLI prompt, not an AI chat.
-3. CLI detects current Git repository and reads `origin`.
-4. CLI normalizes and compares repository identity.
-5. Repository mismatch => hard block, no write, no consume.
-6. Repository match => show environment metadata, target, and any locally-derived mapping suggestions.
-7. User confirms apply.
-8. CLI decrypts locally and performs a safe write.
-9. CLI verifies successful write.
-10. Only then mark/consume the remote secret.
+3. CLI parses the delivery link and validates its repository binding locally.
+4. CLI detects current Git repository and reads `origin`.
+5. CLI normalizes and compares repository identity, before contacting the service.
+6. Repository mismatch => hard block, no network retrieval, no write, no consume.
+7. Repository match => fetch ciphertext, then show environment metadata, target, and any locally-derived mapping suggestions.
+8. User confirms apply.
+9. CLI decrypts locally and performs a safe write.
+10. CLI verifies successful write.
+11. Only then mark/consume the remote secret.
 
 RepoBD performs no commit, push, merge, deployment, package install, or arbitrary command execution after apply.
 
@@ -44,18 +45,40 @@ RepoBD performs no commit, push, merge, deployment, package install, or arbitrar
 
 ### Required
 
-- Receiver must be inside a Git repository.
+- Receiver must be inside a Git repository work tree.
 - v0.1 repository identity is derived from the `origin` remote.
-- Support normalization of common HTTPS and SSH remote representations for the same repository.
+- Supported hosted profiles are **github.com, gitlab.com, and bitbucket.org**. Their common HTTPS, scp-like SSH, and `ssh://` clone forms normalize to the same identity.
 - Folder name and absolute filesystem path are not repository identity.
 - Branch is ignored for v0.1.
+- Comparison is exact and case-sensitive.
+- The binding travels in the delivery link's fragment. The server never receives repository identity.
+- The delivery link is read from a terminal prompt on stdin, never as a command-line argument, so it does not reach shell history or process listings.
+- The fragment grammar is exact: one `k`, one `b`, no repeated and no unknown fields.
+- The repository check completes **before** any network secret retrieval. A mismatch submits no claim, fetches no ciphertext, and consumes nothing.
+- A missing, malformed, or unknown-version binding blocks. There is no unbound delivery mode.
+
+### Fails closed
+
+These block rather than being resolved by guesswork:
+
+- unsupported or self-hosted origin host
+- no `origin` remote
+- more than one configured `origin` URL
+- non-default port, `git://`, plain HTTP, or an arbitrary SSH target
+- an origin URL RepoBD cannot canonicalize, including one carrying credentials
+- an origin URL with leading or trailing whitespace, which is never trimmed into validity
+- a bare repository or a directory with no work tree
+- a delivery link with a repeated or unknown fragment field, or a secret id that is not a canonical capability
 
 ### Out of scope for v0.1
 
 - malicious local user deliberately rewriting Git configuration
+- deliberate rewriting of the unsigned binding in the delivery link
 - proving repository authenticity cryptographically
+- a compromised OS, a modified local Git, or a modified RepoBD CLI
 - GitHub/GitLab account authentication as a condition of pull
 - branch-specific binding
+- generic/self-hosted Git support
 
 ## 5. Environment handling
 

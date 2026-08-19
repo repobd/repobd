@@ -1,28 +1,82 @@
 #!/usr/bin/env node
-import { Command } from "commander";
+// RepoBD CLI entry point. Argument parsing and the real I/O only — the flows
+// themselves live in `commands.ts` so they can be tested without a process.
 
-// Phase 0: scaffold only. `send` and `pull` are stubs with no product
-// behavior. Real implementation lands in later phases per
-// docs/IMPLEMENTATION_PLAN.md.
+import { Command } from "commander";
+import {
+  EXIT_BLOCKED,
+  EXIT_OK,
+  PULL_TAKES_NO_ARGUMENT,
+  hasUnexpectedPullOperand,
+  runPull,
+  runSend,
+} from "./commands.js";
+import { redactingOutput } from "./diagnostics.js";
+import { promptForDeliveryLink } from "./prompt.js";
+
+// A delivery link contains the decryption key. It is read from stdin, never
+// taken as a command-line argument, and never printed back or included in an
+// error.
+const out = (line: string): void => {
+  console.log(line);
+};
+const err = (line: string): void => {
+  console.error(line);
+};
+
+const args = process.argv.slice(2);
 
 const program = new Command();
+
+// The diagnostic safety boundary, installed before any subcommand exists.
+// Commander copies its parent's output configuration into each subcommand at
+// creation time, so this must come first for the whole command tree to inherit
+// it — every diagnostic, from every command, reaches the terminal through
+// `diagnostics.ts` and cannot quote a user-supplied argument.
+program.configureOutput(
+  redactingOutput(args, {
+    out: (text) => process.stdout.write(text),
+    err: (text) => process.stderr.write(text),
+  }),
+);
 
 program.name("repobd").description("RepoBD CLI").version("0.0.0");
 
 program
   .command("send")
-  .description("Send a secret (not yet implemented)")
-  .action(() => {
-    console.error("repobd send: not yet implemented (Phase 0 scaffold)");
-    process.exitCode = 1;
+  .description("Show the repository a delivery link would be bound to")
+  .action(async () => {
+    const code = await runSend({ cwd: process.cwd(), out, err });
+    if (code !== EXIT_OK) {
+      process.exitCode = code;
+    }
   });
 
 program
   .command("pull")
-  .description("Pull a secret (not yet implemented)")
-  .action(() => {
-    console.error("repobd pull: not yet implemented (Phase 0 scaffold)");
-    process.exitCode = 1;
+  .description(
+    "Retrieve a secret bound to this repository (prompts for the delivery link)",
+  )
+  .action(async () => {
+    const code = await runPull({
+      readLink: promptForDeliveryLink,
+      cwd: process.cwd(),
+      out,
+      err,
+    });
+    if (code !== EXIT_OK) {
+      process.exitCode = code;
+    }
   });
 
-program.parse(process.argv);
+// A friendlier message for the most likely mistake, `repobd pull <link>`.
+// This is UX, **not** the security boundary: it covers one argv shape, while
+// the redacting output configuration above covers every shape, including the
+// ones this check deliberately does not try to enumerate. The value is never
+// read here either — only its presence.
+if (hasUnexpectedPullOperand(args)) {
+  err(PULL_TAKES_NO_ARGUMENT);
+  process.exit(EXIT_BLOCKED);
+}
+
+await program.parseAsync(process.argv);
