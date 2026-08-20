@@ -142,7 +142,9 @@ vi.mock("node:fs/promises", async (importOriginal) => {
   };
 });
 
-const { applyAssignment, ENV_FILENAME } = await import("../src/apply/target.js");
+const { applyAssignment, inspectApplyTarget, ENV_FILENAME } = await import(
+  "../src/apply/target.js"
+);
 
 const INCOMING = "TEST_ALPHA_123456";
 const EXISTING = "TEST_BETA_987654";
@@ -179,7 +181,17 @@ const entries = (dir: string): string[] => readdirSync(dir).sort();
 const modeOf = (dir: string): number => statSync(envPath(dir)).mode & 0o7777;
 
 async function replace(dir: string) {
-  return applyAssignment({ root: dir }, KEY, { approvedReplacement: true });
+  // The inspection happens before the hooks below can fire on a temp file, so
+  // it observes the target as the test set it up — exactly as the real caller
+  // observes it before asking the user.
+  const inspection = await inspectApplyTarget({ root: dir }, KEY);
+  if (!inspection.ok) {
+    throw new Error(`fixture did not inspect: ${inspection.reason}`);
+  }
+  return applyAssignment({ root: dir }, KEY, {
+    approvedReplacement: true,
+    expectedState: inspection.state,
+  });
 }
 
 /** Rewrites the file through the same inode, exactly as an editor's save does. */

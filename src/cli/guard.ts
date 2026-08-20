@@ -59,6 +59,16 @@ export type GuardResult =
       /** Present only here: what a request may be addressed to. */
       readonly link: DeliveryLink;
       readonly repo: CanonicalRepo;
+      /**
+       * Absolute path of the work tree whose identity was just matched.
+       *
+       * Carried out of the guard rather than resolved again later, so the
+       * directory a secret is written to is the same one the binding was
+       * checked against. Re-deriving a root from the process's working
+       * directory afterwards would be a second answer to a question already
+       * answered, and the two could differ.
+       */
+      readonly root: string;
     }
   | { readonly ok: false; readonly block: GuardBlock };
 
@@ -110,7 +120,7 @@ export async function authorizeDelivery(
     };
   }
 
-  return { ok: true, link: parsed.link, repo: local.repo };
+  return { ok: true, link: parsed.link, repo: local.repo, root: local.root };
 }
 
 /**

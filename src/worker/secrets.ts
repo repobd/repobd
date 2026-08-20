@@ -16,7 +16,26 @@ export const CLAIM_LEASE_MS = 5 * 60 * 1000;
 export type ClaimFailure = "not_found" | "expired" | "consumed" | "conflict";
 
 export type ClaimResult =
-  | { ok: true; envelope: string; claimExpiresAt: number }
+  | {
+      ok: true;
+      envelope: string;
+      claimExpiresAt: number;
+      /**
+       * How long this lease still has, in milliseconds, measured against the
+       * server's own clock.
+       *
+       * The absolute `claimExpiresAt` above is only meaningful to a caller
+       * whose clock agrees with this one, and a receiver's need not. A
+       * duration does not have that problem: the caller subtracts nothing and
+       * compares against nothing of its own.
+       *
+       * Already capped at the secret's own expiry, because `claim_expires_at`
+       * is stored as `MIN(lease end, expires_at)` — so a delivery about to
+       * expire reports a short lease even on a fresh claim, which is exactly
+       * what a caller about to write needs to know.
+       */
+      leaseRemainingMs: number;
+    }
   | { ok: false; reason: ClaimFailure };
 
 /**
@@ -129,6 +148,10 @@ export async function claimSecret(
         ok: true,
         envelope: row.envelope,
         claimExpiresAt: row.claim_expires_at,
+        // Derived from the row this transaction just read and the same `now`
+        // the transition was decided with, so it describes the lease that was
+        // actually granted rather than a later re-read of it.
+        leaseRemainingMs: row.claim_expires_at - now,
       };
     }
     // The lease was taken but is already gone. Treat as a conflict rather

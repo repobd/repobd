@@ -72,7 +72,20 @@ function entries(dir: string): string[] {
 }
 
 async function apply(dir: string, assignment = KEY, approvedReplacement = false) {
-  return applyAssignment({ root: dir }, assignment, { approvedReplacement });
+  // Mirrors the real caller: a replacement is only ever approved for a state
+  // that was inspected, so the helper obtains one first. When inspection
+  // itself refuses there is nothing to approve, and the apply is made without
+  // an approval — which is also what the real flow does.
+  const inspection = await inspectApplyTarget({ root: dir }, assignment);
+  if (!inspection.ok) {
+    return applyAssignment({ root: dir }, assignment, {
+      approvedReplacement: false,
+    });
+  }
+  return applyAssignment({ root: dir }, assignment, {
+    approvedReplacement,
+    expectedState: inspection.state,
+  });
 }
 
 describe("target construction", () => {
@@ -1233,15 +1246,26 @@ describe("caller objects are snapshotted at entry", () => {
     expect(read(dir)).toBe(`API_KEY=${INCOMING}\n`);
   });
 
-  it("reads the approval and the root exactly once", async () => {
+  it("reads the approval, the root and the expected state exactly once", async () => {
     const dir = await workspace();
     write(dir, `API_KEY=${EXISTING}\n`);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+
     let approvalReads = 0;
     let rootReads = 0;
+    let stateReads = 0;
     const options = {
       get approvedReplacement() {
         approvalReads += 1;
         return true;
+      },
+      get expectedState() {
+        stateReads += 1;
+        return inspection.state;
       },
     };
     const worktree = {
@@ -1255,7 +1279,173 @@ describe("caller objects are snapshotted at entry", () => {
     expect(result.ok).toBe(true);
     expect(approvalReads).toBe(1);
     expect(rootReads).toBe(1);
+    expect(stateReads).toBe(1);
     expect(read(dir)).toBe(`API_KEY=${INCOMING}\n`);
+  });
+
+  it("refuses an approved replacement with no expected state", async () => {
+    // The approval has nothing to be an approval *of*. Refused at the writer,
+    // not merely by the caller that usually supplies it.
+    const dir = await workspace();
+    const before = `API_KEY=${EXISTING}\n`;
+    write(dir, before);
+
+    const result = await applyAssignment({ root: dir }, KEY, {
+      approvedReplacement: true,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.reason).toBe("missing-expected-state");
+    expect(result.targetMayHaveChanged).toBe(false);
+    expect(read(dir)).toBe(before);
+    expect(entries(dir)).toEqual([".env"]);
+  });
+
+  it.each([
+    ["undefined", undefined],
+    ["empty string", ""],
+    ["a number", 1 as unknown],
+    ["null", null as unknown],
+    ["an object", {} as unknown],
+  ])("refuses an approved replacement whose expected state is %s", async (_label, state) => {
+    const dir = await workspace();
+    const before = `API_KEY=${EXISTING}\n`;
+    write(dir, before);
+
+    const result = await applyAssignment({ root: dir }, KEY, {
+      approvedReplacement: true,
+      expectedState: state as never,
+    });
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.reason).toBe("missing-expected-state");
+    expect(read(dir)).toBe(before);
+  });
+
+  it("captures the expected state before the first await", async () => {
+    // A getter that answers correctly once and then lies. If the binding were
+    // read after a suspension point, the second answer would be the one that
+    // authorized the write.
+    const dir = await workspace();
+    const before = `API_KEY=${EXISTING}\n`;
+    write(dir, before);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+
+    let reads = 0;
+    const options = {
+      approvedReplacement: true,
+      get expectedState() {
+        reads += 1;
+        // Only the first read is the real state.
+        return reads === 1 ? inspection.state : ("tampered" as never);
+      },
+    };
+
+    const result = await applyAssignment({ root: dir }, KEY, options);
+    expect(reads).toBe(1);
+    expect(result.ok).toBe(true);
+    expect(read(dir)).toBe(`API_KEY=${INCOMING}\n`);
+  });
+
+  it("ignores an expected state mutated after the call starts", async () => {
+    // The mutation lands after the synchronous snapshot and before the write.
+    const dir = await workspace();
+    write(dir, `API_KEY=${EXISTING}\n`);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+
+    const options: { approvedReplacement: boolean; expectedState: unknown } = {
+      approvedReplacement: true,
+      expectedState: inspection.state,
+    };
+    const promise = applyAssignment({ root: dir }, KEY, options as never);
+    options.expectedState = "tampered";
+    options.approvedReplacement = false;
+    const result = await promise;
+
+    // The call proceeded on the state it captured, and wrote what it was
+    // approved to write.
+    expect(result.ok).toBe(true);
+    expect(read(dir)).toBe(`API_KEY=${INCOMING}\n`);
+  });
+
+  it("cannot be granted approval by a mutation after the call starts", async () => {
+    // The other direction: an unapproved call must not become approved.
+    const dir = await workspace();
+    const before = `API_KEY=${EXISTING}\n`;
+    write(dir, before);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+
+    const options = {
+      approvedReplacement: false,
+      expectedState: inspection.state,
+    };
+    const promise = applyAssignment({ root: dir }, KEY, options);
+    options.approvedReplacement = true;
+    const result = await promise;
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.reason).toBe("confirmation-required");
+    expect(read(dir)).toBe(before);
+  });
+
+  it("still replaces normally with an unchanged inspected state", async () => {
+    const dir = await workspace();
+    write(dir, `OTHER=keep\nAPI_KEY=${EXISTING}\n`);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+
+    const result = await applyAssignment({ root: dir }, KEY, {
+      approvedReplacement: true,
+      expectedState: inspection.state,
+    });
+    expect(result.ok).toBe(true);
+    expect(read(dir)).toBe(`OTHER=keep\nAPI_KEY=${INCOMING}\n`);
+  });
+
+  it("still reports target-changed for a stale but well-formed state", async () => {
+    const dir = await workspace();
+    write(dir, `API_KEY=${EXISTING}\n`);
+    const inspection = await inspectApplyTarget({ root: dir }, KEY);
+    expect(inspection.ok).toBe(true);
+    if (!inspection.ok) {
+      return;
+    }
+    write(dir, `API_KEY=CHANGED\n`);
+
+    const result = await applyAssignment({ root: dir }, KEY, {
+      approvedReplacement: true,
+      expectedState: inspection.state,
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      return;
+    }
+    expect(result.reason).toBe("target-changed");
+    expect(read(dir)).toBe(`API_KEY=CHANGED\n`);
   });
 
   it("treats a non-boolean approval as not approved", async () => {

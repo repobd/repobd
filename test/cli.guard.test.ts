@@ -118,10 +118,19 @@ function spy(): Spy {
       return {
         async claim(secretId, claimToken) {
           state.calls.push({ method: "claim", secretId, claimToken });
-          return { ok: true, envelope: "opaque", claimExpiresAt: 1 };
+          return {
+            ok: true,
+            envelope: "opaque",
+            claimExpiresAt: 1,
+            leaseRemainingMs: 5 * 60_000,
+          };
         },
         async release(secretId, claimToken) {
           state.calls.push({ method: "release", secretId, claimToken });
+          return { ok: true };
+        },
+        async consume(secretId, claimToken) {
+          state.calls.push({ method: "consume", secretId, claimToken });
           return { ok: true };
         },
       };
@@ -159,23 +168,29 @@ function expectNoNetwork(run: Run): void {
 }
 
 describe("exact match is the only path to the network", () => {
-  it("reaches claim and release when the repository matches exactly", async () => {
+  it("reaches the network only after an exact match, and never consumes", async () => {
+    // This file is about the guard, so the fixture's envelope is deliberately
+    // not decryptable: the run gets as far as claim, fails to decrypt, and
+    // hands the claim back. What matters here is that the network was reached
+    // at all, that it was reached at the right address, and that a delivery is
+    // never consumed on a path that did not apply anything. The full apply
+    // lifecycle is exercised in cli.pull-apply.test.ts.
     const dir = await makeRepo("https://github.com/acme/alpha.git");
     const run = await pull(linkFor("github.com/acme/alpha"), dir);
 
-    expect(run.code).toBe(EXIT_OK);
     expect(run.network.clients).toBe(1);
     expect(run.network.calls.map((c) => c.method)).toEqual(["claim", "release"]);
+    expect(run.network.calls.map((c) => c.method)).not.toContain("consume");
     expect(run.network.origins).toEqual([ORIGIN]);
     expect(run.out.join("\n")).toContain("Repository verified: github.com/acme/alpha");
-    expect(run.err).toEqual([]);
+    expect(run.code).toBe(EXIT_BLOCKED);
   });
 
   it("matches the SSH spelling of the same hosted repository", async () => {
     const dir = await makeRepo("git@github.com:acme/alpha.git");
     const run = await pull(linkFor("github.com/acme/alpha"), dir);
-    expect(run.code).toBe(EXIT_OK);
-    expect(run.network.calls).toHaveLength(2);
+    // The subject is that the match let the run reach the network at all.
+    expect(run.network.calls.map((c) => c.method)).toEqual(["claim", "release"]);
   });
 
   it("never consumes: the claim is released, not consumed", async () => {
@@ -375,7 +390,8 @@ describe("fragment tampering follows the modified binding, and is not authentica
     // The guardrail is defeated by an intentional edit. This is documented
     // behavior, not a defect: see docs/THREAT_MODEL.md.
     const run = await pull(linkFor("github.com/acme/alpha"), dir);
-    expect(run.code).toBe(EXIT_OK);
+    // It proceeds past the guard, which is the documented consequence.
+    expect(run.network.calls.map((c) => c.method)[0]).toBe("claim");
   });
 });
 
@@ -398,7 +414,11 @@ describe("the server never learns repository identity", () => {
           const claim = String(input).endsWith("/claim");
           return new Response(
             claim
-              ? JSON.stringify({ envelope: "opaque", claim_expires_at: 1 })
+              ? JSON.stringify({
+                  envelope: "opaque",
+                  claim_expires_at: 1,
+                  lease_remaining_ms: 5 * 60_000,
+                })
               : null,
             {
               status: claim ? 200 : 204,
@@ -408,7 +428,7 @@ describe("the server never learns repository identity", () => {
         }),
     });
 
-    expect(code).toBe(EXIT_OK);
+    // Two requests were made, which is what puts them under test below.
     expect(requests).toHaveLength(2);
     for (const request of requests) {
       // No repository identity, in any spelling. Checked against the URL,
@@ -486,7 +506,6 @@ describe("the delivery link never travels in argv", () => {
       createClient: network.createClient,
     });
     expect(reads).toBe(1);
-    expect(code).toBe(EXIT_OK);
     expect(network.calls).toHaveLength(2);
   });
 

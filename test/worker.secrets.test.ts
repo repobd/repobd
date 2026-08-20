@@ -226,11 +226,57 @@ describe("POST /api/secrets/:id/claim", () => {
 
     const payload = (await response.json()) as Record<string, unknown>;
     expect(payload["envelope"]).toBe(envelope);
-    expect(Object.keys(payload).sort()).toEqual(["claim_expires_at", "envelope"]);
+    // Pinned exactly, so an added field is a deliberate decision rather than a
+    // silent one. `lease_remaining_ms` is the Phase 4C addition.
+    expect(Object.keys(payload).sort()).toEqual([
+      "claim_expires_at",
+      "envelope",
+      "lease_remaining_ms",
+    ]);
 
     const stored = await row(id);
     expect(stored?.["state"]).toBe("claimed");
     expect(stored?.["claim_id"]).toBe(token);
+  });
+
+  it("reports the remaining lease on the server's own clock", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const response = await claim(id, capability());
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    const remaining = payload["lease_remaining_ms"] as number;
+    // A fresh claim on a long-lived secret gets the full lease, minus however
+    // long the request itself took.
+    expect(typeof remaining).toBe("number");
+    const FULL_LEASE_MS = 5 * 60_000;
+    expect(remaining).toBeGreaterThan(FULL_LEASE_MS - 10_000);
+    expect(remaining).toBeLessThanOrEqual(FULL_LEASE_MS);
+  });
+
+  it("reports a short remaining lease when the secret expires sooner", async () => {
+    // The case the receiver actually needs this for: the lease is capped at
+    // the secret's own expiry, so a delivery close to expiry reports a small
+    // window even though the claim itself just succeeded.
+    const id = await createSecret(await makeEnvelope(), 30);
+    const response = await claim(id, capability());
+    const payload = (await response.json()) as Record<string, unknown>;
+
+    const remaining = payload["lease_remaining_ms"] as number;
+    expect(remaining).toBeGreaterThan(0);
+    expect(remaining).toBeLessThanOrEqual(30_000);
+    // And it agrees with the row the transition wrote.
+    const stored = await row(id);
+    expect(stored?.["claim_expires_at"]).toBe(stored?.["expires_at"]);
+  });
+
+  it("reports the remaining lease on a same-token renewal too", async () => {
+    const id = await createSecret(await makeEnvelope());
+    const token = capability();
+    await claim(id, token);
+    const again = await claim(id, token);
+    expect(again.status).toBe(200);
+    const payload = (await again.json()) as Record<string, unknown>;
+    expect(payload["lease_remaining_ms"]).toBeGreaterThan(0);
   });
 
   it("caps the lease at the secret expiry", async () => {

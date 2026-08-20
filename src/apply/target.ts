@@ -93,6 +93,7 @@
 // own metadata, and either becomes `.env` through rename or is removed.
 // Nothing is written to /tmp, to `.git`, to a backup file, or to a log.
 
+import { createHash } from "node:crypto";
 import { constants, type Stats } from "node:fs";
 import { lstat, open, readFile, rename, unlink } from "node:fs/promises";
 import path from "node:path";
@@ -158,6 +159,9 @@ export type TargetAction =
 export type TargetFailureReason =
   /** The assignment did not satisfy the v0.1 grammar at the write boundary. */
   | "invalid-assignment"
+  /** A replacement was approved without naming the state it was approved
+   * against, so there is nothing to bind the approval to. */
+  | "missing-expected-state"
   /** Not a regular file: symlink, directory, FIFO, socket, device. */
   | "unsafe-target"
   /** `.env` is not owned by the user running RepoBD. */
@@ -177,6 +181,37 @@ export type TargetFailureReason =
   /** A replacement is required and the caller granted no approval. */
   | "confirmation-required";
 
+/**
+ * An opaque fingerprint of the target exactly as it was inspected.
+ *
+ * It exists to bind a *person's* decision to the thing they decided about. A
+ * replacement confirmation is granted against a particular `.env`; if that
+ * file changes between the question and the write, the answer no longer
+ * applies to what is on disk, and reusing it would apply a decision the user
+ * never made.
+ *
+ * Opaque on purpose: it is a digest, it is never printed, and it reveals no
+ * file content. It covers what the supported boundary already treats as the
+ * file's identity — existence, dev, ino, uid, gid, mode, and the bytes.
+ *
+ * This is not a versioning system and not a transaction token. It answers one
+ * question: is this the same file, in the same state, as the one that was
+ * looked at?
+ */
+export type TargetState = string & { readonly __targetState: unique symbol };
+
+/** The fingerprint of a target that does not exist. */
+const ABSENT_STATE = "absent" as TargetState;
+
+function fingerprint(stats: Stats, bytes: Buffer): TargetState {
+  const digest = createHash("sha256");
+  digest.update(
+    `${stats.dev}:${stats.ino}:${stats.uid}:${stats.gid}:${stats.mode & MODE_MASK}:`,
+  );
+  digest.update(bytes);
+  return `present:${digest.digest("hex")}` as TargetState;
+}
+
 export interface TargetInspection {
   readonly path: string;
 }
@@ -186,6 +221,11 @@ export type InspectResult =
       readonly ok: true;
       readonly action: TargetAction;
       readonly style: EnvFileStyle;
+      /**
+       * The state this answer describes. Hand it back to `applyAssignment` so
+       * the write happens against the file that was inspected, or not at all.
+       */
+      readonly state: TargetState;
     })
   | (TargetInspection & {
       readonly ok: false;
@@ -356,6 +396,7 @@ interface ExistingEnv {
   readonly lineIndex: number | null;
   readonly bom: boolean;
   readonly snapshot: TargetSnapshot;
+  readonly state: TargetState;
 }
 
 type ExistingResult =
@@ -440,6 +481,7 @@ async function readExisting(
             : "replace",
       lineIndex: inspection.lineIndex,
       snapshot: snapshotOf(stats, bytes),
+      state: fingerprint(stats, bytes),
     },
   };
 }
@@ -572,7 +614,13 @@ export async function inspectApplyTarget(
     };
   }
   if (stats === null) {
-    return { ok: true, path: target, action: "create", style: NEW_FILE_STYLE };
+    return {
+      ok: true,
+      path: target,
+      action: "create",
+      style: NEW_FILE_STYLE,
+      state: ABSENT_STATE,
+    };
   }
   if (stats.isSymbolicLink() || !stats.isFile()) {
     return {
@@ -597,6 +645,7 @@ export async function inspectApplyTarget(
     path: target,
     action: existing.existing.action,
     style: existing.existing.style,
+    state: existing.existing.state,
   };
 }
 
@@ -609,14 +658,36 @@ export interface ApplyOptions {
    * returns `confirmation-required` and touches nothing.
    */
   readonly approvedReplacement: boolean;
+  /**
+   * The state the caller inspected — and, where a person was asked, the state
+   * they were asked about.
+   *
+   * When present, the target must still be in exactly that state or nothing is
+   * written. This is what stops a confirmation granted about one `.env` from
+   * being spent on a different one: between the question and the answer the
+   * file can change, and an approval is only ever an approval of what was
+   * shown.
+   *
+   * Distinct from, and earlier than, the snapshot gate inside the replacement
+   * itself. That one asks "did the file change while I was preparing the
+   * write"; this one asks "did it change since the human looked at it". Both
+   * are needed and neither replaces the other.
+   *
+   * **Required whenever `approvedReplacement` is true.** Optional elsewhere,
+   * because create, append and no-op carry no human decision that could go
+   * stale — their safety comes from the snapshot gates inside the write
+   * itself. An approved replacement without this fails closed.
+   */
+  readonly expectedState?: TargetState;
 }
 
 /**
  * Applies one assignment to the verified work tree's `.env`.
  *
- * Every input is read exactly once, at entry, into a local primitive — the
- * root, both halves of the assignment, and the replacement approval. The
- * caller's objects are never consulted again. They belong to the caller, they
+ * Every input that could authorize a mutation is read exactly once, at entry,
+ * into a local primitive: the work tree root, both halves of the assignment,
+ * the replacement approval, and the expected target state that approval was
+ * given against. The caller's objects are never consulted again. They belong to the caller, they
  * are ordinary mutable JavaScript objects, and everything after the first
  * `await` here is a decision about a file: an object that answered one thing
  * during validation and another thing after a suspension point could otherwise
@@ -636,13 +707,39 @@ export async function applyAssignment(
   assignment: ApplyAssignment,
   options: ApplyOptions,
 ): Promise<ApplyResult> {
-  // Snapshot, before anything can suspend.
+  // Snapshot, before anything can suspend. Every input that could authorize a
+  // mutation is read exactly once, here, and never again — the root, both
+  // halves of the assignment, the approval, and the state that approval was
+  // given against. Each is a primitive by the time this block ends, so a
+  // caller's object cannot answer differently after an await and turn an
+  // approval for one file into an approval for another.
   const target = envTargetPath(worktree.root);
   const validated = validateAssignment(assignment.key, assignment.value);
   const approvedReplacement = options.approvedReplacement === true;
+  // Read once. `TargetState` is a string, so this is a copy and not a
+  // reference into anything the caller can still reach; a getter that answers
+  // differently later answers to nobody.
+  const declaredState: unknown = options.expectedState;
+  const expectedState =
+    typeof declaredState === "string" && declaredState !== ""
+      ? (declaredState as TargetState)
+      : undefined;
 
   if (!validated.ok) {
     return failure(target, "invalid-assignment", INVALID_ASSIGNMENT_DETAIL, false);
+  }
+  if (approvedReplacement && expectedState === undefined) {
+    // An approval is always an approval of something. Without the state it was
+    // given against there is nothing to check it has not moved on, and taking
+    // a fresh baseline here would be exactly the stale-approval bug wearing a
+    // different hat. Enforced at this boundary rather than in the caller,
+    // because this is the boundary that writes.
+    return failure(
+      target,
+      "missing-expected-state",
+      `${ENV_FILENAME} was not modified: a replacement was approved without the state it was approved against`,
+      false,
+    );
   }
   // These are primitives copied out of the validation result, not properties
   // read back off the caller's object. Nothing below reads `assignment` or
@@ -658,12 +755,23 @@ export async function applyAssignment(
   }
 
   if (stats === null) {
+    if (expectedState !== undefined && expectedState !== ABSENT_STATE) {
+      return staleState(target);
+    }
     return createEnv(target, key, value);
   }
 
   const existing = await readExisting(target, stats, key, value);
   if (!existing.ok) {
     return failure(target, existing.reason, existing.detail, false);
+  }
+  if (
+    expectedState !== undefined &&
+    expectedState !== existing.existing.state
+  ) {
+    // The file is not the one the caller inspected. Whatever was decided about
+    // it — including a person's yes — was decided about something else.
+    return staleState(target);
   }
 
   switch (existing.existing.action) {
@@ -708,6 +816,16 @@ function failure(
   targetMayHaveChanged: boolean,
 ): ApplyResult {
   return { ok: false, path: target, reason, detail, targetMayHaveChanged };
+}
+
+/** The target is no longer the one that was inspected. Nothing was written. */
+function staleState(target: string): ApplyResult {
+  return failure(
+    target,
+    "target-changed",
+    `${ENV_FILENAME} changed after RepoBD inspected it; it was not modified`,
+    false,
+  );
 }
 
 /**

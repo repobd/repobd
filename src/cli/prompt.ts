@@ -34,3 +34,51 @@ export async function promptForDeliveryLink(): Promise<string> {
     rl.close();
   }
 }
+
+/**
+ * What the user said about replacing an existing value.
+ *
+ * `unavailable` is distinct from `no` on purpose: it means the question could
+ * not be put to a person at all, which the caller must report differently from
+ * a person declining.
+ */
+export type ReplacementAnswer = "yes" | "no" | "unavailable";
+
+/** Only an explicit yes is a yes. */
+const AFFIRMATIVE: ReadonlySet<string> = new Set(["y", "yes"]);
+
+/**
+ * Asks whether to replace an existing value.
+ *
+ * Requires a TTY, and this is the security-relevant part rather than a
+ * convenience: the delivery link arrives on stdin, so a piped invocation has
+ * already sent one line down that channel and may well have more. Reading an
+ * approval from the same pipe would let `printf 'link\ny\n' | repobd pull`
+ * approve the destruction of an existing secret without a person ever seeing
+ * the question. Without a terminal there is no one to ask, so the answer is
+ * `unavailable` and no byte of stdin is consumed.
+ *
+ * Anything that is not an explicit yes — a bare newline, "n", a stray word,
+ * end of input — is `no`. The default is the safe one, and the prompt says so.
+ */
+export async function promptForReplacement(
+  key: string,
+): Promise<ReplacementAnswer> {
+  if (process.stdin.isTTY !== true) {
+    return "unavailable";
+  }
+  const rl = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true,
+  });
+  try {
+    const answer = await rl.question(`Replace ${key} in .env? [y/N] `);
+    return AFFIRMATIVE.has(answer.trim().toLowerCase()) ? "yes" : "no";
+  } catch {
+    // Input ended, or the read was interrupted. Neither is consent.
+    return "no";
+  } finally {
+    rl.close();
+  }
+}

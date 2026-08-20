@@ -5,7 +5,8 @@
 // receives a decryption key, never decrypts, and never logs envelope
 // contents. See docs/SECURITY_INVARIANTS.md.
 //
-// Claiming takes a lease and returns the envelope; it does not consume.
+// Claiming takes a lease and returns the envelope, along with how much of
+// that lease remains on the server's clock; it does not consume.
 // Consume marks a secret used, but does not prove the receiver applied it —
 // that guarantee belongs to the later local apply flow, which calls consume
 // only after verifying its own write. Release hands an unused claim back.
@@ -128,7 +129,14 @@ async function handleClaim(
   const result = await claimSecret(env.DB, id, action.claimId, Date.now());
   if (result.ok) {
     return json(
-      { envelope: result.envelope, claim_expires_at: result.claimExpiresAt },
+      {
+        envelope: result.envelope,
+        claim_expires_at: result.claimExpiresAt,
+        // Additive. The state machine is untouched: this is the same claim
+        // result, saying how much of the lease is left on the server's clock
+        // so a receiver never has to compare timestamps with its own.
+        lease_remaining_ms: result.leaseRemainingMs,
+      },
       200,
     );
   }

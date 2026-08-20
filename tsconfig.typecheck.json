@@ -16,6 +16,8 @@
     "test/cli.diagnostics.test.ts",
     "test/cli.guard.test.ts",
     "test/cli.link.test.ts",
+    "test/cli.pull-apply.test.ts",
+    "test/cli.secret-client.test.ts",
     "test/cli.smoke.test.ts",
     "test/crypto.envelope.test.ts",
     "test/repo.binding.test.ts",
