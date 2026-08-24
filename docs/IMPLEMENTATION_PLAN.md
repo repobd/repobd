@@ -4,7 +4,29 @@
 
 This plan converts the reviewed MVP requirements into small implementation phases. It is intentionally conservative: each phase must preserve the security invariants and avoid unnecessary dependencies or abstractions.
 
-## Phase 0 — Repository scaffold only
+## Status
+
+| Phase | Scope | Status |
+|---|---|---|
+| 0 | Repository scaffold | COMPLETE |
+| 1 | Crypto envelope | COMPLETE |
+| 2 | Worker + D1 transport | COMPLETE |
+| 3 | CLI repository identity guard | COMPLETE |
+| 4 | Safe local apply | COMPLETE |
+| 5 | End-to-end send UX | NOT STARTED — needs replanning |
+| 6 | Release hardening | NOT STARTED |
+
+Current HEAD: `266cc971c155b3f3d19ebcbb367677bd38450da2`,
+`feat: complete safe secret apply flow`. CI run `32355153940` SUCCESS;
+806 / 806 tests across 17 files, typecheck and build pass.
+
+The phase descriptions below are kept as written where they still describe what
+was built. Where the delivered scope is narrower than the original sketch —
+Phase 4 most of all — the section says so rather than being rewritten to look
+like it was always the plan. That history is why the v0.1 boundary is what it
+is.
+
+## Phase 0 — Repository scaffold only — COMPLETE
 
 Goal: create the smallest runnable TypeScript workspace without product behavior.
 
@@ -27,7 +49,7 @@ Validation:
 
 Stop point: report the exact files and dependencies added before any transport implementation.
 
-## Phase 1 — Crypto envelope and local-only proof
+## Phase 1 — Crypto envelope and local-only proof — COMPLETE
 
 Goal: prove client-side/native encryption and decryption without server persistence.
 
@@ -45,7 +67,7 @@ Rules:
 
 Stop point: Codex security review of the crypto flow before persistence is added.
 
-## Phase 2 — Worker + D1 short-lived ciphertext transport
+## Phase 2 — Worker + D1 short-lived ciphertext transport — COMPLETE
 
 Goal: store only ciphertext and non-secret metadata and retrieve it by opaque id.
 
@@ -65,7 +87,7 @@ Rules:
 
 Stop point: adversarial tests + Codex review of server boundary and D1 state transitions.
 
-## Phase 3 — CLI repository identity guard
+## Phase 3 — CLI repository identity guard — COMPLETE
 
 Goal: block a delivery when the current Git repository does not match the intended repository.
 
@@ -84,50 +106,89 @@ Rules:
 
 Stop point: demonstrate `test-alpha -> alpha PASS` and `test-alpha -> beta BLOCK`.
 
-## Phase 4 — Safe local apply
+## Phase 4 — Safe local apply — COMPLETE
 
-Goal: safely map and write received developer secrets after repository match.
+Commits `63a3575` (4A + 4B) and `266cc97` (4C).
 
-Scope:
-- detect `.env`-style multi-variable payloads
-- for raw keys, derive candidate variable/target suggestions from local repository facts only
-- label inference as suggestion unless directly evidenced
-- confirmation before overwrite or target changes
-- allowlisted target files only
-- block path traversal, symlink targets, and repo-root escape
-- do not print secret values
-- local plaintext/temp state is discarded on failure
+Goal, as originally written: safely map and write received developer secrets
+after repository match.
 
-Consume semantics:
-- do not consume on repo mismatch
-- do not consume on user cancellation
-- do not consume on operational/write failure
-- consume only after successful local apply and verification
+**What was actually built is narrower than that goal, deliberately.** During
+Phase 4 planning the payload contract was settled at exactly one `KEY=value`
+per delivery, which removed the need for mapping inference entirely — the key
+travels inside the payload — and the target was fixed at a single file. The
+scope below describes what exists, not what was first sketched.
 
-Stop point: targeted negative tests + Codex review.
+Delivered in three slices:
 
-## Phase 5 — End-to-end send/pull UX
+**4A — payload and existing-file logic (pure).**
+- `src/apply/payload.ts`: the single authority for the `KEY=value` grammar.
+  Exactly one assignment; several fail closed.
+- `src/apply/env-file.ts`: recognizes a conservative single-line subset of
+  `.env` as an allowlist, and refuses everything outside it — duplicates,
+  multiline values, same-line compound syntax, loader-dependent forms, exotic
+  whitespace. No dotenv parser.
 
-Goal: complete the minimal user flow.
+**4B — filesystem trust boundary.**
+- `src/repo/git.ts` gained `rev-parse --show-toplevel` as a fourth read-only
+  allowlisted command, returning the work tree root alongside the identity.
+- `src/apply/target.ts`: writes only `<verified root>/.env`, a path it
+  constructs and never accepts. Symlink and special-file refusal, exclusive
+  create at `0600`, append that cannot truncate, replacement through a temp
+  file whose ownership and permissions are established and verified before any
+  secret byte is written, BOM preservation, and read-back verification.
 
-Sender:
-- `repobd send` opens the RepoBD send page
-- user enters text, repo, optional environment metadata/target, TTL
-- client encrypts locally
-- delivery URL is returned
+**4C — lifecycle wiring.**
+- `src/cli/commands.ts` runs the full pull lifecycle; `secret-client.ts` gained
+  `consume`; `prompt.ts` gained a TTY-only replacement confirmation.
+- The Worker claim response gained `lease_remaining_ms`, additively. No state,
+  token semantics, consume precondition, TTL or lease rule changed.
 
-Receiver:
-- `repobd pull`
-- URL entered in terminal prompt, not AI chat
-- repo hard check
-- show environment/target/mapping information
-- explicit confirmation
-- safe apply
-- consume
+Consume semantics, as implemented:
+- no consume on repository mismatch — and no claim either
+- no consume on user cancellation
+- no consume on operational or write failure
+- no consume when ownership cannot be confirmed immediately before the write
+- consume only after a verified successful apply, where an existing identical
+  value counts as success so a retry converges
 
-No commit, push, deploy, shell command execution, or agent-side secret echo.
+Every slice closed with a Codex security review at blocker 0 / major 0.
 
-## Phase 6 — Release hardening
+## Phase 5 — End-to-end send UX — NOT STARTED
+
+`repobd send` currently resolves and reports the repository a delivery link
+created here would be bound to. It does not accept a secret, encrypt it, create
+a delivery, or produce a usable link.
+
+**This phase needs replanning before implementation.** The scope originally
+sketched here assumed a wider payload than v0.1 settled on — free text, a
+`.env` document, environment metadata and target selection — and a web send
+page. Now that one delivery carries exactly one `KEY=value` and the target is
+fixed, what `send` must collect and how it should collect it are open questions,
+not settled requirements.
+
+Deliberately undecided, and to be resolved at a planning cycle rather than
+assumed here:
+
+- whether a web send page is part of the MVP at all, or whether `send` stays
+  entirely in the CLI
+- how the sender supplies the assignment, and how it avoids the argv and
+  shell-history exposure that `pull` already avoids for the link
+- whether environment metadata is added before the eventual v0.1 release —
+  the current implementation carries no such channel, and this cycle does not
+  decide whether that changes
+- the slice boundaries within Phase 5
+
+Fixed regardless of those answers, including that the receiver's target stays
+`.env` at the verified work-tree root — target selection is not an open Phase 5
+question for v0.1:
+
+- client-side encryption; the server never receives plaintext or the key
+- the binding is produced from the sender's own resolved repository
+- the delivery link carries key and binding in the fragment only
+- no commit, push, deploy, package install, or arbitrary command execution
+
+## Phase 6 — Release hardening — NOT STARTED
 
 Goal: make v0.1 safe enough for external testing.
 

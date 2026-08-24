@@ -12,13 +12,24 @@ Negative and adversarial tests are first-class requirements.
 
 Target pure logic such as:
 
-- repository URL normalization
-- repository match/mismatch
-- TTL evaluation
-- target allowlist rules
-- path normalization / traversal rejection
-- `.env` key parsing/mapping logic
+- repository URL canonicalization across supported clone spellings
+- repository match/mismatch, exact and case-sensitive
+- delivery link and fragment grammar
+- payload grammar: exactly one `KEY=value`, and the safe value alphabet
+- the supported `.env` subset, and what it refuses as ambiguous
+- line-style and BOM detection
+- TTL and lease evaluation
 - payload-size validation
+
+The target is fixed at `.env` in the verified work tree root and is composed
+rather than accepted, so there is no allowlist to test and no user-supplied
+path for traversal to occur in. What is tested instead is that the root comes
+from repository resolution — a nested subdirectory and a linked worktree both
+resolve correctly — and that a pathname RepoBD cannot read fails closed rather
+than being normalized into a sibling.
+
+Variable and target mapping are not part of v0.1 (see `MVP_REQUIREMENTS.md`
+§6), so there are no mapping tests.
 
 ### Worker/API tests
 
@@ -27,7 +38,8 @@ Use Cloudflare's Vitest integration where possible.
 Target:
 
 - create
-- fetch
+- claim, which both takes the lease and returns the envelope
+- claim renewal with the same token, and the reported remaining lease
 - expiry
 - consume
 - already-consumed behavior
@@ -56,15 +68,17 @@ Never test MVP behavior using production BQmenu, Rescue Pet Card, or real produc
 
 ### Positive
 
-- Alpha secret → Alpha repo → success
-- `.env` payload → confirmed allowed target → success
-- single API key → evidenced/specified variable mapping → success
+- Alpha secret → Alpha repo → apply succeeds → delivery consumed
+- target file absent → created → consumed
+- target key already present with the same value → no write → consumed
+- target key present with a different value → confirmation → replace → consumed
 
 ### Repository safety
 
 - Alpha secret → Beta repo → BLOCK
 - no Git repo → BLOCK
-- no origin → BLOCK or explicit unsupported flow (v0.1 decision)
+- no `origin`, an unsupported host, or more than one origin URL → BLOCK. The
+  binding cannot be established, so nothing is claimed, retrieved or written.
 - SSH/HTTPS forms of same remote → MATCH after normalization
 
 ### Lifecycle
@@ -72,9 +86,18 @@ Never test MVP behavior using production BQmenu, Rescue Pet Card, or real produc
 - expired → BLOCK
 - consumed → BLOCK
 - successful pull → second pull BLOCK
-- cancellation before apply → secret remains available
-- repository mismatch → secret remains available
-- local write failure → secret remains available
+- cancellation before apply → not consumed; claim released where possible
+- repository mismatch → not consumed, and never claimed
+- local write failure → not consumed; claim released where possible
+- ownership refresh unreachable → not consumed, not written, and **not**
+  released, because the holder is unknown; the lease expiring is the fallback
+- consume transport unreachable after a verified write → one direct idempotent
+  retry, no second `.env` write, and the apply is reported as done even when
+  consumption cannot be confirmed
+- consume reports a claim conflict after a verified write → one same-token
+  claim renewal, then one consume retry; no second `.env` write, no repeated
+  renewal loop, and this path never chains into the unreachable-consume retry
+  above
 
 ### Concurrency
 
@@ -82,12 +105,21 @@ Never test MVP behavior using production BQmenu, Rescue Pet Card, or real produc
 
 ### File safety
 
-- path traversal → BLOCK
 - symlink target → BLOCK
-- `.git/**` target → BLOCK
-- unsupported file target → BLOCK
-- existing value → confirmation required
+- directory / FIFO / special file target → BLOCK
+- ambiguous or unsupported target-file syntax → no write, no consume
+- duplicate active target key → no write, no consume
+- multiline target value → no write, no consume
+- same-line compound syntax → no write, no consume
+- existing different value → confirmation required
+- target changed after approval → approval invalid, no write
 - permission denied → no consume and no secret output
+
+### Payload
+
+- exactly one KEY=value → accepted
+- more than one assignment → BLOCK
+- value outside the safe character set → BLOCK
 
 ### Crypto/input
 

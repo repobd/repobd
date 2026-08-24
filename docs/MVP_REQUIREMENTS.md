@@ -6,16 +6,41 @@ Deliver encrypted secret text to the intended repository with minimal friction a
 
 ## 2. Primary user flow
 
-### Sender
+### Sender — NOT IMPLEMENTED; Phase 5
 
-1. Run a RepoBD send command or open the RepoBD send page.
-2. Enter secret text (API key, `.env` content, password, or other short plaintext).
-3. Specify intended repository.
-4. Optionally specify environment metadata and intended target.
+`repobd send` currently resolves and reports the repository a delivery link
+created here would be bound to. It does not accept a secret, encrypt it, create
+a delivery, or produce a usable link.
+
+The flow below is the **original sketch**, kept for context. It is not a v0.1
+requirement, and several of its steps are open Phase 5 questions rather than
+decisions — in particular whether a web send page exists at all, how the sender
+supplies the assignment without argv or shell-history exposure, and whether
+environment metadata is added before the eventual v0.1 release. The receiver's
+target is settled and is not one of those questions: v0.1 always applies to
+`.env` at the verified work-tree root, and target selection is not offered.
+Any broader target ever existing is a future / post-v0.1 possibility, not a
+Phase 5 decision within v0.1.
+
+1. Run a RepoBD send command, or open a send page. *(open: CLI-only or
+   web-assisted — Phase 5 decision)*
+2. Enter the secret. *(settled: the payload is exactly one `KEY=value`, so
+   whatever the surface, it carries one assignment and not free text)*
+3. Specify the intended repository. *(settled differently: the binding is
+   produced from the sender's own resolved repository, not typed)*
+4. Optionally specify environment metadata. *(current implementation: no
+   metadata channel exists; whether one is added before the eventual v0.1
+   release is an open Phase 5 question, not decided here. An intended target
+   is not offered — the receiver target is fixed and is not selectable.)*
 5. Choose TTL.
-6. Browser/client encrypts the payload locally.
+6. Client encrypts the payload locally.
 7. Server stores ciphertext and non-secret metadata.
-8. RepoBD returns a short-lived delivery URL containing/pointing to the client-side decryption material in a form that is not sent to the server.
+8. RepoBD returns a short-lived delivery URL carrying the decryption material
+   in a form the server never receives.
+
+Fixed regardless of how Phase 5 resolves: client-side encryption only; the
+server never receives plaintext, the key, or repository identity; the key and
+binding travel in the link fragment.
 
 ### Receiver
 
@@ -25,21 +50,41 @@ Deliver encrypted secret text to the intended repository with minimal friction a
 4. CLI detects current Git repository and reads `origin`.
 5. CLI normalizes and compares repository identity, before contacting the service.
 6. Repository mismatch => hard block, no network retrieval, no write, no consume.
-7. Repository match => fetch ciphertext, then show environment metadata, target, and any locally-derived mapping suggestions.
-8. User confirms apply.
-9. CLI decrypts locally and performs a safe write.
-10. CLI verifies successful write.
-11. Only then mark/consume the remote secret.
+7. Repository match => claim the delivery and fetch the ciphertext.
+8. CLI decrypts locally and validates that the payload is exactly one assignment.
+9. CLI inspects the target file at the verified work tree root and states the intended change, naming the key and never the value.
+10. CLI asks for confirmation only if an existing different value would be replaced.
+11. CLI confirms with the server that it still holds the claim, immediately before writing.
+12. CLI performs a safe write and reads the file back to verify it.
+13. Only then mark/consume the remote secret.
 
 RepoBD performs no commit, push, merge, deployment, package install, or arbitrary command execution after apply.
 
 ## 3. Payload
 
-- Plaintext text only.
-- Maximum plaintext payload size: **64 KiB**.
-- No file upload in v0.1.
-- Core transport should not be hard-coded to `.env` only.
-- Product UX should remain developer-secret focused in v0.1.
+One delivery carries **exactly one assignment**:
+
+```env
+OPENAI_API_KEY=value
+```
+
+- Plaintext text only. No file upload in v0.1.
+- Maximum plaintext payload size: **64 KiB**, enforced by the crypto layer.
+- Exactly one `KEY=value`. A payload carrying several assignments **fails
+  closed** — it is not split, and neither the first nor the last is chosen.
+- Key: `[A-Za-z_][A-Za-z0-9_]*`.
+- Value: one or more printable-ASCII characters, none of them whitespace and
+  none of `"` `'` `\` `#` `$` backtick `;` `&` `|` `<` `>`. RepoBD writes values
+  verbatim and adds no quoting, so a value that would not survive verbatim is
+  refused rather than escaped.
+- Not a dotenv document, not an arbitrary text bundle, not a general-purpose
+  password or note transfer.
+
+Known and intentional v0.1 limitation: values containing spaces, newlines,
+quotes, `#`, `$`, `;` or `&` — a PEM block, a connection string with query
+parameters — cannot be delivered.
+
+Multi-assignment delivery is a possible future direction. It is not v0.1.
 
 ## 4. Repository binding
 
@@ -82,64 +127,136 @@ These block rather than being resolved by guesswork:
 
 ## 5. Environment handling
 
-Environment is metadata, not a hard machine identity in v0.1.
+**Current implementation: no environment metadata channel exists.** The
+delivery record carries the ciphertext, TTL and lifecycle state, and nothing
+else. Repository identity is the only context RepoBD checks.
 
-Reason: there is no universal reliable standard local fact for `development`, `staging`, `preview`, or `production`.
+Phase 5 may decide whether environment metadata is added before the eventual
+v0.1 release. No such addition is approved yet, and this section does not
+decide the question either way. If environment metadata is added later, these
+constraints stand:
 
-Requirements:
+- environment is metadata, not a machine identity — there is no universal
+  reliable local fact for `development`, `staging`, `preview` or `production`
+- a sender may supply it; a receiver sees it before apply
+- RepoBD must not claim automatic environment certainty without an explicit
+  mechanism behind it
+- production-like labels may warrant stronger visual confirmation
 
-- sender may provide environment metadata
-- receiver sees it prominently before apply
-- RepoBD must not claim automatic environment certainty unless backed by an explicit future mechanism
-- production-like labels may receive stronger visual confirmation
-
-Do not create persistent environment auto-binding in v0.1 solely to simulate certainty.
+Do not create persistent environment auto-binding merely to simulate certainty.
 
 ## 6. Target and variable mapping
 
-RepoBD may locally inspect repository facts to suggest where a secret belongs.
+**Not implemented in v0.1, and not required.** The payload names its own
+variable, so there is nothing to infer: the key travels inside the delivery and
+the target is fixed. RepoBD reads no `.env.example`, greps for no
+`process.env.NAME`, and makes no suggestion.
 
-Preferred evidence sources:
+The variable name is taken verbatim from the payload, and replacing an existing
+different value requires explicit confirmation (see §7).
 
-1. `.env.example`
-2. `.env.sample`
-3. `.env.template`
-4. direct references such as `process.env.NAME`
-5. direct references such as `import.meta.env.NAME`
-6. explicitly supported configuration files
+If a later phase delivers a bare value with no key, mapping inference becomes
+necessary and these constraints apply:
 
-Rules:
+- repository inspection happens locally; repository content is never uploaded
+- a suggestion must be labelled a suggestion unless directly evidenced
+- with no reliable mapping, ask the receiver for the variable name
+- a rejected suggestion must be correctable in the same flow, not re-offered
 
-- repository inspection happens locally
-- repository content is not uploaded for analysis
-- a suggestion must be labeled as a suggestion unless directly evidenced
-- if no reliable mapping is found, ask the receiver for the variable name/target
-- if the user rejects a suggestion, allow correction in the same flow; do not simply restart with the same suggestion
-- `.env`-formatted payload preserves supplied variable names
-- replacing an existing value requires confirmation
+Evidence sources such as `.env.example`, `.env.sample`, `.env.template`,
+`process.env.NAME` and `import.meta.env.NAME` are recorded here as future
+options only.
 
 ## 7. Safe write
 
-Initial allowed targets may include:
+### Target
 
-- `.env`
-- `.env.local`
-- `.env.development`
-- `.env.preview`
-- `.env.staging`
-- `.env.production`
+The only path RepoBD v0.1 may write:
 
-Requirements:
+```text
+<verified Git work tree root>/.env
+```
 
-- reject path traversal
-- reject target outside allowed repository scope
-- reject symlink targets
-- reject `.git/**`
-- reject executable/script targets
-- do not rewrite unrelated files
-- do not print secret values
+Not `.env.local`, `.env.development`, `.env.preview`, `.env.staging`,
+`.env.production`, any other suffix, any relative path, any absolute path, or
+any caller-selected file. The path is **constructed** from the verified root and
+never accepted from a caller, so path traversal is structurally absent rather
+than filtered.
 
-Exact allowlist may be refined before implementation.
+The root comes from the repository resolution that passed the binding check —
+never from the process's working directory. Running from a subdirectory writes
+the root `.env`; running in a linked worktree writes that worktree's `.env`.
+
+### Supported `.env` subset
+
+RepoBD implements **no general dotenv parser**. It modifies an existing file
+only when it can confidently read the one ordinary single-line assignment it
+needs. The recognized subset is an allowlist:
+
+- a blank line
+- a full-line comment; a commented-out key such as `# API_KEY=old` is
+  historical text, never an active assignment, and is never deleted or rewritten
+- one assignment on one physical line, optionally `export`-prefixed, with
+  space/tab spacing only, whose value is either a bare run of the payload
+  character set or a simple single-line quoted run, optionally followed by a
+  comment separated by at least one space or tab
+
+Anything outside that subset is refused with **no write and no consume**:
+
+- duplicate active target key
+- a target value spanning more than one line
+- several assignments on one physical line, whitespace- or punctuation-separated
+- loader-dependent syntax
+- exotic whitespace in a syntactic position
+- quoting RepoBD does not read confidently
+- any line whose structure it cannot resolve
+
+RepoBD does not guess.
+
+### Existing value
+
+- key absent → append
+- exactly one supported active assignment whose value is **literally identical**
+  to the payload's → no write;
+  this counts as a successful apply and the delivery is consumed, which is what
+  lets a retry converge after a lost consume
+- exactly one supported active assignment whose value **differs literally** →
+  explicit human confirmation, naming the key and never a value. Approval is
+  bound to the exact filesystem state inspected; if the file changes after the
+  answer, the approval is invalid and nothing is written.
+
+Comparison is **literal**, and deliberately so. RepoBD reads a supported quoted
+assignment such as `KEY="abc"`, but it does not unquote, trim, or otherwise
+reinterpret what it finds. A payload of `KEY=abc` against an existing
+`KEY="abc"` is therefore a **different** value and asks for confirmation
+rather than reporting a no-op.
+
+That is conservative on purpose: deciding that two spellings of a secret are
+the same secret is a judgement RepoBD should not make on someone's behalf, and
+asking costs a keystroke while guessing wrong costs a silent mismatch. RepoBD
+only ever writes the plain `KEY=value` form, so its own writes always compare
+equal on a retry.
+
+### File safety
+
+- reject symlink targets, of any kind, pointing anywhere
+- reject directories, FIFOs, sockets and device files
+- never write `.git/**`, an executable, a script, or an unrelated project file
+- never rewrite an unrelated line
+- preserve the file's line endings, trailing-newline shape and UTF-8 BOM
+- create a new file owner-only; never change an existing file's permissions
+- a replacement preserves the original's uid, gid and POSIX mode, or fails
+  closed. RepoBD does not claim to preserve ACLs, extended attributes or exotic
+  filesystem metadata.
+- never print a secret value
+
+### Shell compatibility
+
+RepoBD writes dotenv-style assignments. It guarantees its documented safe
+subset and its own round trip: anything RepoBD writes, RepoBD reads back with
+the same key and literal value. It does **not** guarantee equivalent behaviour
+when a `.env` file is executed as shell code, including `source .env`.
+Shell-source compatibility is outside v0.1.
 
 ## 8. One-time and TTL behavior
 
@@ -213,7 +330,7 @@ Backend access pattern is expected to be many users with low per-user frequency 
 
 - max plaintext payload: 64 KiB (enforce corresponding encrypted request limits appropriately)
 - short TTL options with a defined maximum
-- request/rate limits for create/fetch/consume endpoints
+- request/rate limits for the create, claim, consume, and release endpoints
 - no public secret directory/search
 - no permanent storage mode
 - no file hosting
@@ -252,16 +369,21 @@ CLI should be usable through npm/npx.
 
 MVP is functionally complete when all of these are true:
 
-- correct repo + confirmed target => apply succeeds
-- wrong repo => hard block
+- correct repo + one valid assignment => apply succeeds and the delivery is consumed
+- wrong repo => hard block, with no claim and no secret retrieval
+- payload carrying more than one assignment => block
+- unsupported or ambiguous target-file syntax => no write, no consume
+- existing same value => no write, apply succeeds, delivery consumed
+- existing different value => explicit confirmation required, and the approval
+  is invalid if the file changes after it
 - expired => block
 - already consumed => block
 - second successful pull => block
 - server never sees plaintext
 - server never sees decryption key
 - secret never appears in normal stdout/log output
-- safe target rules hold
-- traversal and symlink tests block
+- the only written path is the target file at the verified work tree root
+- symlink and special-file targets block
 - operational failure does not consume before successful apply
 - concurrent pulls cannot both consume successfully
 - 64 KiB limit enforced

@@ -22,7 +22,7 @@ RepoBD should defend against or reduce:
 - expired-secret use
 - concurrent consume races that would permit more successful uses than configured
 - abuse through oversized payloads or excessive request rates
-- accidental provider/variable mapping mistakes where a local repository fact can provide safer guidance
+- accidental application of a secret to the wrong variable, by carrying the variable name inside the delivery rather than inferring it locally
 
 ## Out of scope
 
@@ -110,7 +110,7 @@ Trusted locally to:
 - receive the delivery URL
 - fetch ciphertext
 - decrypt locally
-- inspect allowed local repository facts for mapping suggestions
+- inspect the target file to decide whether the assignment can be applied safely
 - perform the explicitly confirmed safe write
 
 Must not:

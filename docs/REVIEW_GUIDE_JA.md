@@ -1,8 +1,59 @@
-# RepoBD 要件レビューガイド（日本語）
+# RepoBD 要件レビューガイド（日本語） — 参考資料 / SUPERSEDED
 
-この文書は、RepoBD v0.1 の正本ドキュメントを日本語で確認するためのレビュー用ガイドです。
+> **この文書は正本ではありません。**
+>
+> 本書は Phase 4 実装以前の要件レビュー時点で作成された **日本語の参考資料** です。
+> 現在の実装・product boundary・governance とは複数の点で一致しません。
+>
+> **本書を実装手順・レビュー手順・governance rule として参照しないでください。**
+> 判断が必要な場合は必ず下記の英語正本を参照してください。
 
-英語の原文は AI エージェント向けの正本として維持します。人間のレビューでは、まず本書を確認し、判断が必要な箇所だけ原文へ戻る運用を推奨します。
+## 現在の正本
+
+| 対象 | 正本 |
+|---|---|
+| 現在の checkpoint / phase 状態 / 未解決事項 | [`../HANDOVER.md`](../HANDOVER.md) |
+| v0.1 product behavior / scope | [`MVP_REQUIREMENTS.md`](MVP_REQUIREMENTS.md) |
+| Security invariants | [`SECURITY_INVARIANTS.md`](SECURITY_INVARIANTS.md) |
+| Threat boundary | [`THREAT_MODEL.md`](THREAT_MODEL.md) |
+| Architecture | [`ARCHITECTURE.md`](ARCHITECTURE.md) |
+| Phase 計画 / 実装順序 | [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) |
+| **AI workflow / review / authorization gate** | [`AI_WORKFLOW.md`](AI_WORKFLOW.md) |
+| Agent 全般の routing / 禁止事項 | [`../AGENTS.md`](../AGENTS.md) |
+
+## 本書の記述のうち、特に現行と異なる点
+
+以下は本書の本文より **英語正本が優先** します。本文は当時の記録として残しています。
+
+- **Payload** — 1 delivery = 厳密に 1 つの `KEY=value`。複数 assignment は fail closed。
+  `.env` 全文や任意テキストの受け渡しは v0.1 の対象外です。
+- **Target** — 検証済み Git worktree root の `.env` のみ。`.env.local` 等の
+  複数 target 候補や target 選択 UI は v0.1 では実装されません。
+- **Mapping / 候補提示** — v0.1 では実装しません。variable name は payload 内に
+  含まれるため推測は不要です。本文 §8 の候補提示 UI は現行の動作ではありません。
+- **Environment metadata** — 現行実装には channel 自体が存在しません（本文 §7）。
+  eventual v0.1 リリース前に追加するかどうかは Phase 5 の未決事項であり、
+  決定事項ではありません。
+- **Sender / Web 送信画面** — `repobd send` は未完成です。Web 送信面を MVP に
+  含めるかどうかを含め、Phase 5 の未決事項であり、決定事項ではありません。
+- **開発時の役割分担（本文 §14 / §15）** — 現行の governance に置き換えられています。
+  下記「現行 governance」を参照してください。
+
+## 現行 governance（要約 / 正本は `AI_WORKFLOW.md`）
+
+本書本文の記述と異なり、現在は以下が厳格に適用されます。
+
+1. 1 つの repository/worktree に対して **ACTIVE な AI agent は常に 1 つだけ**です。
+   read-only の調査も active work として扱われます。
+2. Claude Code は承認された cycle を実装・validation したのち Codex へ review を
+   送り、**その時点で IDLE** になります。review 中は repository 作業を一切行わず、
+   結果を polling もしません。
+3. Codex は read-only で review し、結果を **自身の pane で Human へ報告**します。
+   結果が Claude Code へ自動的に返ることはありません。
+4. **Codex の指摘は自動修正されません。** severity を問わず、修正には毎回
+   Human の明示的な承認が必要です。
+5. commit / push / deploy / npm publish / security boundary 変更は Human 承認事項です。
+
 
 ---
 
@@ -328,7 +379,11 @@ Ponytail / YAGNI の思想を採用します。
 
 ---
 
-## 14. Herdr 開発構成
+## 14. Herdr 開発構成 — SUPERSEDED
+
+> 本節は当時の記録です。現行の pane 構成・model 方針・role 分担は
+> [`../HERDR_BOOTSTRAP.md`](../HERDR_BOOTSTRAP.md) と
+> [`AI_WORKFLOW.md`](AI_WORKFLOW.md) が正本です。
 
 推奨 4 ペイン:
 
@@ -342,53 +397,44 @@ Vitest / typecheck      | wrangler dev / D1
 AI 常駐なし              | AI 常駐なし
 ```
 
-### Claude Code
-
-通常:
-- Sonnet 5
-
-security-sensitive な変更:
-- Opus 5 へ一時昇格
-
-対象例:
-- crypto flow
-- secret lifecycle
-- filesystem write
-- race condition
-- trust boundary
-
-### Codex
-
-通常:
-- gpt-5.6-sol
-- High effort
-- read-only
-
-crypto / consume / path / logging 等の重要変更では、その時点の最高 effort へ昇格します。
+model 昇格の考え方（crypto flow / secret lifecycle / filesystem write /
+race condition / trust boundary で上位 model を用いる）は現在も同様ですが、
+正確な条件は上記正本を参照してください。
 
 ---
 
-## 15. 開発時の役割分担
+## 15. 開発時の役割分担 — SUPERSEDED
+
+> **本節の記述は現行 governance と一致しません。**
+> 正本は [`AI_WORKFLOW.md`](AI_WORKFLOW.md) です。冒頭の「現行 governance」も
+> 参照してください。
+>
+> 特に、当時の本文には次の 2 点の誤りがあります。
+>
+> - Claude Code の役割として「Codex 指摘修正」を無条件に挙げていました。
+>   現在は、**severity を問わず Human の明示的承認なしに修正を開始しません。**
+> - 「並列化するのは実装・レビュー・テスト・runtime」と記していました。
+>   現在は、**同一 worktree に対して実装と review が同時に active になることは
+>   ありません。** Claude Code が IDLE になってから Codex が review します。
+>   並列なのは pane の存在であって、repository 作業ではありません。
+
+現行の役割分担（要約）:
 
 Claude Code:
-- 実装計画
-- 小さな単位で実装
-- test / typecheck / build（lint ツールは未導入。YAGNIに従い必要になるまで追加しない）
-- Codex 指摘修正
+- 承認された cycle 内での実装計画・実装
+- test / typecheck / build（lint ツールは未導入。YAGNI に従い必要になるまで追加しない）
+- validation 完了後に Codex へ review を送信し、IDLE になる
 
 Codex:
 - read-only independent review
-- requirement drift
-- over-engineering
-- security invariant
+- requirement drift / over-engineering / security invariant
 - path / crypto / consume / logging 等の確認
+- 結果は自身の pane で Human へ報告する
 
 User:
 - 重要判断
-- commit / push / deploy の承認
-- scope 変更の承認
-
-並列化するのは「複数 AI に同時実装」ではなく、実装・レビュー・テスト・runtime です。
+- commit / push / deploy / publish の承認
+- Codex 指摘を受けた次の write cycle の承認
 
 ---
 
@@ -482,4 +528,7 @@ Wrong repo. No secret.
 8. Cloudflare / D1 の設計が MVP に十分小さいか
 9. v0.1 で不要な Team / Enterprise 機能が入っていないか
 
-この 9 点が納得できれば、詳細な英語文書を全部読む必要はありません。
+この 9 点は当時の観点の記録であり、現在の判断を免除するものではありません。
+現在何が決定事項で何が未決事項かは、この 9 点の納得度にかかわらず、必ず本書冒頭
+「現在の正本」に挙げた英語文書（特に `MVP_REQUIREMENTS.md` / `HANDOVER.md` /
+`AI_WORKFLOW.md`）で確認してください。
