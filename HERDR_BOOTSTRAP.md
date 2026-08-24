@@ -19,26 +19,15 @@
 └────────────────────────┴────────────────────────┘
 ```
 
-## Claude Code initial read order
+## Session bootstrap
 
-1. `AGENTS.md`
-2. `CLAUDE.md`
-3. `HANDOVER.md`
-4. `docs/AI_WORKFLOW.md`
-5. `docs/SECURITY_INVARIANTS.md`
-6. relevant section of `docs/MVP_REQUIREMENTS.md`
-7. relevant section of `docs/ARCHITECTURE.md`
-8. `docs/BUILD_NATIVE_DEPENDENCY.md` when adding or replacing dependencies
+`AGENTS.md` is the sole authority for bootstrap and document read routing —
+see its "Bootstrap and document routing" section for the tiered routing
+both agents follow. This file defines no separate read order.
 
-## Codex initial read order
-
-1. `AGENTS.md`
-2. `CODEX_REVIEW.md`
-3. `HANDOVER.md`
-4. `docs/SECURITY_INVARIANTS.md`
-5. `docs/THREAT_MODEL.md`
-6. relevant section of `docs/MVP_REQUIREMENTS.md`
-7. requested base commit/diff
+Claude Code's `CLAUDE.md` is auto-loaded by its project instructions in this
+environment and does not need a separate explicit re-read; Codex reads
+`CODEX_REVIEW.md` explicitly, per `AGENTS.md`'s Tier 0.
 
 ## Role split
 
@@ -117,7 +106,14 @@ Codex defaults to gpt-5.6-sol with High effort. Use maximum available effort for
 
 ## Concurrency rule
 
-Do not run multiple editing agents against the same worktree. RepoBD is small and security invariants cross component boundaries; parallelize implementation/review/testing/runtime, not independent feature implementation.
+Do not run multiple editing agents against the same worktree. RepoBD is small
+and security invariants cross component boundaries. Claude Code and Codex are
+never both ACTIVE on this repository at the same time — implementation and
+review happen strictly in sequence, and review starts only after Claude Code
+has gone idle. What may exist concurrently are panes and non-AI processes:
+the test terminal and the runtime terminal can sit alongside implementation
+or review without either becoming a second AI agent working the repository.
+Do not parallelize independent feature implementation.
 
 ## Stop points
 

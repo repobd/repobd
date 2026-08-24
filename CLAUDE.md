@@ -18,12 +18,10 @@ Claude Code is the primary implementer for RepoBD.
 
 Before implementation:
 
-1. Read `AGENTS.md`.
-2. Read `HANDOVER.md`.
-3. Read `docs/AI_WORKFLOW.md`.
-4. Read `docs/SECURITY_INVARIANTS.md`.
-5. Read only the relevant sections of `docs/MVP_REQUIREMENTS.md` and architecture docs.
-6. Propose a small implementation plan and stop for user confirmation when requested by workflow.
+1. Read `AGENTS.md` — it owns bootstrap and document routing (mandatory
+   per-session docs, and which authoritative document a given task routes
+   to). Follow its routing rather than a separate read order.
+2. Propose a small implementation plan and stop for user confirmation when requested by workflow.
 
 During implementation:
 

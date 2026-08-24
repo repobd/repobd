@@ -4,6 +4,37 @@
 
 Define how RepoBD is developed in Herdr with clear role separation and minimal ambiguity.
 
+## Normative gates (start here)
+
+This section is the operative contract and the normal bootstrap target. The
+detailed sections later in this document hold the full rationale and edge
+cases; read those only for a contested or unusual workflow situation. The
+normative and detailed sections must not disagree — the detailed sections
+are authoritative if they ever appear to.
+
+1. **One repository/worktree = one ACTIVE AI agent.** Read-only inspection
+   or investigation counts as active work. See "Single active agent per
+   repository".
+2. **Claude Code implements and validates within an approved cycle, sends
+   the completed working tree to Codex, then goes IDLE.** No further
+   repository work, including polling, happens until the review ends. See
+   "Review wait gate".
+3. **Codex reviews read-only while Claude Code stays IDLE.** Codex never
+   edits or repairs files. See "Codex boundary".
+4. **Codex reports its result in its own pane, to the user — never to
+   Claude Code.** Claude Code never polls for or fetches the result. See
+   "Review handoff" and "After the review".
+5. **No Codex finding triggers automatic repair, regardless of severity**
+   (BLOCKER, MAJOR, MINOR, or NIT). See "Human authorization gate".
+6. **Any write cycle following a Codex review requires explicit, fresh
+   Human authorization.** See "Human authorization gate".
+7. **While a review is outstanding, Human approval cannot lift the no-edit
+   prohibition.** It is unconditional until the review ends or is
+   explicitly cancelled. See "Review wait gate".
+
+Commit gate: blocker 0 / major 0. User approval is also required before
+commit, push, deploy, and npm publish — see `AGENTS.md`.
+
 ## Roles
 
 ### Claude Code
@@ -65,9 +96,14 @@ Do not parallelize multiple editing agents in the same worktree.
 
 ## Session bootstrap
 
-Every new session reads the authoritative documents listed in `AGENTS.md` and `HERDR_BOOTSTRAP.md` before work begins.
+`AGENTS.md` is the sole authority for bootstrap and read-order routing — see
+its "Bootstrap and document routing" section. `HERDR_BOOTSTRAP.md` is a
+lightweight Herdr-specific entrypoint into that same routing and defines no
+separate read order of its own.
 
-Agents should read only the relevant requirement/design sections after the mandatory startup docs. Avoid rereading the entire repository/history without a reason.
+Agents should read only the relevant requirement/design sections after the
+mandatory startup docs. Avoid rereading the entire repository/history without
+a reason.
 
 ## Implementation instruction template
 

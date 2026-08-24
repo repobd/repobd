@@ -17,28 +17,67 @@ RepoBD is a lightweight secret handoff tool. Its core promise is simple: **make 
 - `docs/THREAT_MODEL.md` — what RepoBD does and does not defend against
 - `docs/SECURITY_INVARIANTS.md` — non-negotiable security rules
 - `docs/ARCHITECTURE.md` — technical architecture
+- `docs/IMPLEMENTATION_PLAN.md` — phase sequence and implementation status
 - `docs/AI_WORKFLOW.md` — Herdr / Claude Code / Codex workflow
 - `docs/TEST_STRATEGY.md` — required validation and adversarial tests
 - `docs/BUILD_NATIVE_DEPENDENCY.md` — build vs native vs dependency decisions
 - `HANDOVER.md` — current state and next work
 
-## Read first
+## Bootstrap and document routing
 
-### Every new implementation session
+This is the single, canonical definition of what to read and when. No other
+file defines a competing read order; other files link here instead. If a
+summary elsewhere (README, HANDOVER, an agent guide) disagrees with an
+authoritative document, the authoritative document wins.
 
-1. `AGENTS.md`
-2. `HANDOVER.md`
-3. `docs/AI_WORKFLOW.md`
-4. `docs/SECURITY_INVARIANTS.md`
-5. The relevant section of `docs/MVP_REQUIREMENTS.md`
+### Tier 0 — auto-loaded agent-specific policy
 
-### Claude Code
+- **Claude Code:** `CLAUDE.md` is auto-loaded by Claude Code's project
+  instructions in this environment. Do not schedule a separate explicit
+  re-read of it.
+- **Codex:** read `CODEX_REVIEW.md` explicitly at session start — this
+  environment does not guarantee it is auto-loaded — and review from the
+  requested base commit/diff only unless a security boundary requires wider
+  review.
 
-Also read `CLAUDE.md`.
+### Tier 1 — every repository work session
 
-### Codex
+1. `AGENTS.md` (this file) — priority, universal prohibitions, this routing.
+2. `HANDOVER.md` — current checkpoint, current phase, unresolved items,
+   current/next task.
 
-Also read `CODEX_REVIEW.md` and review from the requested base commit/diff only unless a security boundary requires wider review.
+### Tier 2 — task-routed authoritative documents
+
+Read the document(s) the current task actually needs, and only the relevant
+sections where practical. Not every authority is read every session.
+
+| Task type                          | Authority                          |
+|-------------------------------------|-------------------------------------|
+| Current repo state                  | `HANDOVER.md`                      |
+| Product behavior / v0.1 scope       | `docs/MVP_REQUIREMENTS.md`         |
+| Security invariant                  | `docs/SECURITY_INVARIANTS.md`      |
+| Threat / protection boundary        | `docs/THREAT_MODEL.md`             |
+| Architecture / component boundary   | `docs/ARCHITECTURE.md`             |
+| Phase planning / status             | `docs/IMPLEMENTATION_PLAN.md`      |
+| Review / handoff / authorization    | `docs/AI_WORKFLOW.md`              |
+| Test design / validation            | `docs/TEST_STRATEGY.md`            |
+| Dependency / native decision        | `docs/BUILD_NATIVE_DEPENDENCY.md`  |
+
+`docs/IMPLEMENTATION_PLAN.md` is on-demand: read it for phase planning, phase
+status, implementation sequence, or next-phase planning, not for every task.
+
+`docs/AI_WORKFLOW.md` opens with a concise normative-gates section; that
+section — not the full document — is the normal bootstrap target for review,
+handoff, and authorization questions. Read the detailed sections below it
+only for a contested or unusual workflow case.
+
+### Tier 3 — human/reference
+
+- `README.md`
+- `docs/REVIEW_GUIDE_JA.md` — historical Japanese reference, not
+  authoritative; see its own header for the current authority map.
+
+Read Tier 3 documents only when the task specifically concerns them.
 
 ## Never
 

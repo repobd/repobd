@@ -75,7 +75,11 @@ No production Cloudflare resources exist. The Wrangler configuration is local-de
 
 ## Authoritative docs
 
-Start with:
+Documentation navigation for human readers. This is not agent bootstrap: an
+AI agent's read order and task routing are defined only in
+[`AGENTS.md`](AGENTS.md), which stays the sole canonical routing authority.
+
+For a human getting oriented, start with:
 
 - [`AGENTS.md`](AGENTS.md)
 - [`HANDOVER.md`](HANDOVER.md)
