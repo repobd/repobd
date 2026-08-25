@@ -4,14 +4,17 @@
 
 Phases 0 through 5A are complete and committed. `repobd pull` and `repobd
 send` together run a local send → pull round trip. Phase 5B — production
-integration and a real end-to-end run — is in progress.
+integration and a real end-to-end run — implemented and production E2E
+completed, pending final Review B / commit gate.
 
 - branch: `main`
-- current committed HEAD: `7dbebba98b68a9b7df1ffa371e7e8bd7fe267aa3`
-- commit: `feat: complete CLI sender flow`
-- Phase 5B: in progress. Phase 5B-1 (rate-limit enforcement and non-
-  executable production D1 shape) is implemented, pending Codex Review A
-  and Human Gate A. No Cloudflare resource has been created.
+- current committed HEAD: `4bf43fa382ff841e929edb00e91913fa2c04a404`
+- commit: `chore: bind production D1 database`
+- Phase 5B: production D1 created and migrated, Worker deployed to
+  `workers.dev` with rate-limit guardrails active, and a real synthetic
+  end-to-end matrix run against that production environment (Human Gates
+  A, B, and C). Closure documentation (this update) is uncommitted, pending
+  Codex Review B.
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -20,8 +23,42 @@ Repository:
 - npm account: `repobd`
 - Email aliases: `hello@repobd.com`, `support@repobd.com`, `security@repobd.com`, `abuse@repobd.com`
 
-No production Cloudflare resources exist. Nothing is deployed. Nothing is
-published to npm. The repository is still private.
+Production Cloudflare resources now exist for RepoBD (Phase 5B — see
+below); the repository is still private, and nothing is published to npm.
+This is production *integration*, not a public release: no public
+documentation, support process, or announced availability exists yet, and
+none is implied by this checkpoint.
+
+### Production environment (Phase 5B)
+
+- **Worker:** `repobd-worker`, deployed to
+  `https://repobd-worker.shinya-bj.workers.dev` (no custom domain/route —
+  by settled Phase 5B decision), version
+  `7c505c06-f0f4-4b03-9992-10226f3858ec`.
+- **D1:** `repobd-production` (`database_id`
+  `79800646-dc8a-4dca-97c9-81fed33dc94a`), migration
+  `0001_create_secrets.sql` applied, schema matches the reviewed design
+  exactly (`id, envelope, created_at, expires_at, state, claim_id,
+  claim_expires_at, consumed_at` — no plaintext, key, or repository-identity
+  column).
+- **Rate limiting:** `CREATE_LIMITER` (namespace `2001`, 20 requests/60s on
+  `POST /api/secrets`) and `LIFECYCLE_LIMITER` (namespace `2002`, 120
+  requests/60s on claim/consume/release), both active in production;
+  `/health` and unmatched routes are exempt. Account-wide namespace
+  uniqueness was confirmed before deploy — the account had zero Worker
+  scripts prior to this deployment.
+- **Real E2E matrix (synthetic data only, no real credentials):** normal
+  round trip, wrong-repository block, consumed-delivery re-pull rejection,
+  real TTL expiry, same-value convergence, unreachable-origin local
+  fail-closed behavior, and the create rate limiter's 429 admission guard
+  were all exercised against this live production environment and passed.
+  Consume-uncertainty/retry (E2E-6) was intentionally not run against
+  production — existing HTTP-client-boundary integration tests from Phase 4
+  remain the authority for that behavior, and Phase 5B does not add
+  network-chaos infrastructure. Read-only production D1 inspection
+  confirmed no plaintext secret value, decryption key, or repository
+  identity ever reached server storage, in any row created during this
+  matrix.
 
 ## Product direction
 
@@ -203,20 +240,22 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   create call; `src/cli/secret-client.ts` adds `create` and validates the
   configured origin; `src/cli/link.ts` owns the one origin policy the builder
   and parser share.
-- **Phase 5B — production integration and real end-to-end.** IN PROGRESS.
-  Phase 5B-1 (rate-limit enforcement + non-executable production D1 shape) is
-  implemented across three distinct Wrangler configs, each with a different
+- **Phase 5B — production integration and real end-to-end.** Implemented
+  and production E2E completed, pending final Review B / commit gate.
+  Phase 5B-1 (rate-limit enforcement + non-executable production D1 shape,
+  reviewed at Codex Review A: blocker 0 / major 0 / minor 0 / nit 0) is
+  committed across three distinct Wrangler configs, each with a different
   role:
   - `wrangler.jsonc` (local dev + the existing shared worker test suite):
     `CREATE_LIMITER` and `LIFECYCLE_LIMITER`, both `1000` requests/60s — a
     generous local-only ceiling, **not** the production threshold, chosen so
     the pre-existing 890+ tests sharing one Miniflare instance are never
     throttled by it.
-  - `wrangler.production.jsonc` (what actually deploys, not yet used):
-    `CREATE_LIMITER` exactly `20`/60s, `LIFECYCLE_LIMITER` exactly `120`/60s
-    — the real production policy. No `d1_databases` entry — that is added
-    only at Human Gate A, once the database actually exists; no fake or
-    placeholder `database_id` is committed.
+  - `wrangler.production.jsonc` (what is now actually deployed — see
+    "Production environment" above): `CREATE_LIMITER` exactly `20`/60s,
+    `LIFECYCLE_LIMITER` exactly `120`/60s — the real production policy, and
+    the real `d1_databases` binding to `repobd-production`, added at Human
+    Gate A from the actual `wrangler d1 create` output.
   - `wrangler.ratelimit-test.jsonc` (test-only, its own isolated Miniflare
     instance via `test/vitest.worker-ratelimit.config.ts`): the same exact
     `20`/`120` per 60s thresholds as production, so
@@ -229,20 +268,20 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   rejection. `/health` and unmatched routes never consult a limiter. Every
   `ratelimits` `namespace_id` across all three configs is a distinct
   positive-integer string, non-secret, never derived from a secret, key,
-  repository identity, delivery id, claim token, or client IP;
-  account-wide uniqueness against other Cloudflare resources on the target
-  account has not been verified and is a documented Gate B pre-deploy
-  requirement, not a claim. No Cloudflare resource has been created, no
-  migration applied, nothing deployed, no E2E run. Not yet reviewed by
-  Codex.
+  repository identity, delivery id, claim token, or client IP.
+  Account-wide production namespace uniqueness was confirmed before deploy
+  (zero pre-existing Worker scripts on the target account). Human Gates A
+  (D1 creation), B (migration + rate-limit activation + deploy + health),
+  and C (real synthetic E2E matrix) are all complete. Codex Review B
+  (closure) is pending.
 
 Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 5B-1 is implemented but not yet reviewed.** The rate-limit
-  enforcement and config are locally validated but have not passed Codex
-  Review A or Human Gate A.
+- **Phase 5B closure documentation is uncommitted.** Production E2E is
+  complete and this update reflects it, but it has not yet passed Codex
+  Review B or the Phase 5B commit/closure gate.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
@@ -260,8 +299,11 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
   default. One local full-suite run has failed on it under load; it has not
   failed in CI. Phase 0 code, untouched since. Fixing it needs its own
   authorized cycle.
-- **No production infrastructure.** No Cloudflare resources are provisioned and
-  nothing is deployed.
+- **Production infrastructure exists but is not yet the public v0.1
+  environment.** `repobd-production` D1 and the `repobd-worker` Worker are
+  live at `workers.dev` (see "Production environment" above), but this is
+  Phase 5B integration proof, not a public launch — see Phase 6 for what
+  remains before that decision.
 
 ## Development workflow
 
@@ -279,13 +321,15 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Send the Phase 5B-1 working tree to Codex for Review A (rate-limit
-   binding syntax/enforcement, no fake D1 identifier, explicit production
-   targeting — see the Phase 5B plan).
-2. Human Gate A: authorize creating the dedicated RepoBD production D1
-   database, then add its real binding to `wrangler.production.jsonc`.
-3. Human Gate B: authorize the migration, rate-limit activation, and deploy.
-4. Human Gate C: authorize the real E2E matrix.
+1. Send the Phase 5B closure working tree (documentation only — no product
+   code changed during Gate C) to Codex for Review B: infrastructure
+   evidence, real E2E evidence, security boundaries, documentation
+   accuracy, and repository state.
+2. Human closure gate: decide whether to commit the Phase 5B closure
+   documentation.
+3. Only then consider Phase 6 — release hardening remains a fully separate,
+   explicitly authorized decision.
 
 Production Cloudflare resource creation, deployment and npm publication all
-still require explicit user approval.
+still require explicit user approval; Phase 6 (npm publish, public GitHub
+visibility, custom domain) has not been authorized.

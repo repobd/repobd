@@ -22,8 +22,9 @@
   // is a non-secret resource identifier, the same way `database_name` is.
   // Binding name is `DB`, matching `interface Env` in src/worker/index.ts
   // and the local dev binding in wrangler.jsonc — not Wrangler's suggested
-  // default binding name. No migration has been applied to this database
-  // yet (`num_tables: 0` at creation) — that is Human Gate B's action.
+  // default binding name. Migration `0001_create_secrets.sql` was applied
+  // at Human Gate B; a read-only check confirmed no migration remained
+  // pending afterward.
   "d1_databases": [
     {
       "binding": "DB",
@@ -42,11 +43,10 @@
   // arbitrary label) and is a non-secret configuration identifier — never
   // derived from a secret, key, repository identity, delivery id, claim
   // token, or client IP. These two RepoBD-specific IDs are stable and
-  // distinct from each other. Account-wide uniqueness against any other
-  // Cloudflare resource already on the target account has NOT been
-  // verified in this cycle — no production Cloudflare mutation is
-  // authorized merely to check it, so this stays a documented Gate B
-  // pre-deploy requirement rather than a claim.
+  // distinct from each other. Gate B verified no pre-existing account-wide
+  // namespace collision before production deploy (the account held zero
+  // Worker scripts at that time) — a point-in-time check, not a standing
+  // guarantee against a future unrelated Worker being misconfigured.
   "ratelimits": [
     {
       "name": "CREATE_LIMITER",

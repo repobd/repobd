@@ -14,12 +14,12 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 3 | CLI repository identity guard | COMPLETE |
 | 4 | Safe local apply | COMPLETE |
 | 5A | CLI sender, local development only | COMPLETE |
-| 5B | Production integration and real end-to-end | IN PROGRESS — Phase 5B-1 implemented, pending Codex Review A / Human Gate A |
+| 5B | Production integration and real end-to-end | IMPLEMENTED — production E2E completed, pending final Review B / commit gate |
 | 6 | Release hardening | NOT STARTED |
 
-Current committed HEAD: `7dbebba98b68a9b7df1ffa371e7e8bd7fe267aa3`,
-`feat: complete CLI sender flow`. Phase 5B-1 is uncommitted work in progress
-on top of it.
+Current committed HEAD: `4bf43fa382ff841e929edb00e91913fa2c04a404`,
+`chore: bind production D1 database`. Phase 5B closure documentation is
+uncommitted work in progress on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -197,7 +197,7 @@ Fixed, as before:
 - the delivery link carries key and binding in the fragment only
 - no commit, push, deploy, package install, or arbitrary command execution
 
-## Phase 5B — Production integration and real end-to-end — IN PROGRESS
+## Phase 5B — Production integration and real end-to-end — IMPLEMENTED, production E2E completed
 
 Goal: stand up the minimum Cloudflare surface needed to prove one genuine
 external send → pull round trip.
@@ -208,27 +208,28 @@ CLI pointed at that origin over HTTPS, and minimal Cloudflare-native rate
 limiting in place *before* the end-to-end matrix runs against a public
 endpoint.
 
-Every step that creates or changes a production Cloudflare resource requires
-explicit user approval first, split across three Human Gates (A: create the
+Every step that creates or changes a production Cloudflare resource required
+explicit user approval first, split across three Human Gates — A: create the
 D1 database and bind its real id; B: migrate, activate rate limiting, and
-deploy; C: run the real E2E matrix).
+deploy; C: run the real E2E matrix — all three now complete.
 
 **Phase 5B-1 — rate-limit enforcement + non-executable production D1
-shape — implemented, pending Codex Review A / Human Gate A.** Cloudflare
-Workers Rate Limiting bindings (`CREATE_LIMITER` on `POST /api/secrets`,
-`LIFECYCLE_LIMITER` on claim/consume/release) exist in three Wrangler
-configs, each with a different role and threshold:
+shape — COMPLETE, reviewed at Codex Review A (blocker 0 / major 0 / minor 0
+/ nit 0).** Cloudflare Workers Rate Limiting bindings (`CREATE_LIMITER` on
+`POST /api/secrets`, `LIFECYCLE_LIMITER` on claim/consume/release) exist in
+three Wrangler configs, each with a different role and threshold:
 
 - `wrangler.jsonc` — local dev and the existing shared worker test suite.
   Both limiters set to `1000` requests/60s: a generous local-only ceiling,
   **not** the production threshold, so the pre-existing tests (which share
   one Miniflare instance and therefore one counter per namespace for their
   whole run) are never throttled by it.
-- `wrangler.production.jsonc` — what actually deploys. `CREATE_LIMITER`
-  exactly `20` requests/60s, `LIFECYCLE_LIMITER` exactly `120` requests/60s
-  — the real production policy. Deliberately no `d1_databases` entry: no
-  fake or placeholder `database_id` is committed; the real binding is added
-  only at Human Gate A, from the actual `wrangler d1 create` output.
+- `wrangler.production.jsonc` — what is now actually deployed.
+  `CREATE_LIMITER` exactly `20` requests/60s, `LIFECYCLE_LIMITER` exactly
+  `120` requests/60s — the real production policy — plus the real
+  `d1_databases` binding to `repobd-production`
+  (`database_id 79800646-dc8a-4dca-97c9-81fed33dc94a`), added at Human Gate
+  A from the actual `wrangler d1 create` output.
 - `wrangler.ratelimit-test.jsonc` — test-only, its own isolated Miniflare
   instance (via `test/vitest.worker-ratelimit.config.ts`). Same exact
   `20`/`120` per-60s thresholds as production, so
@@ -240,11 +241,56 @@ configs, each with a different role and threshold:
 rejection. `/health` and unmatched routes never consult a limiter. Every
 `ratelimits` `namespace_id` in all three configs is a distinct
 positive-integer string — non-secret configuration, never derived from a
-secret, key, repository identity, delivery id, claim token, or client IP;
-account-wide uniqueness against other Cloudflare resources has not been
-verified and is documented as a Gate B pre-deploy requirement, not a claim.
-No Cloudflare resource has been created, no migration applied, nothing
-deployed, no E2E run.
+secret, key, repository identity, delivery id, claim token, or client IP.
+Account-wide production namespace uniqueness was confirmed before deploy: a
+read-only Cloudflare API check (`GET /accounts/{id}/workers/scripts`) showed
+zero pre-existing Worker scripts on the target account.
+
+**Phase 5B-2/3 — infrastructure provisioning, deploy, and real E2E —
+COMPLETE.** D1 created (`repobd-production`) and migrated
+(`0001_create_secrets.sql`, schema verified to match the reviewed design
+exactly); Worker deployed to `https://repobd-worker.shinya-bj.workers.dev`
+(version `7c505c06-f0f4-4b03-9992-10226f3858ec`); `GET /health` returns
+`200 ok`. A real synthetic E2E matrix ran against this environment:
+
+- **E2E-1 normal round trip** — PASS. `send` → production `create` →
+  delivery link → `pull` in the matching fixture repository → correct
+  value written and read back → `consume` → production row reached
+  `consumed`.
+- **E2E-2 wrong repository** — PASS. `pull` from a different fixture
+  repository was rejected with "Repository mismatch" before any claim;
+  read-only D1 inspection confirmed the row stayed `available` throughout;
+  the intended repository could still claim it afterward.
+- **E2E-3 consumed delivery** — PASS. A second `pull` of the same,
+  already-consumed delivery was rejected ("already been used"); no second
+  `.env` write; `consumed_at` unchanged in D1.
+- **E2E-4 expiry** — PASS, tested via a direct authorized call to the
+  existing `create` endpoint with a short `ttl_seconds` (no TTL CLI
+  override added, and the shipped CLI's fixed 900-second TTL is
+  unchanged); claim after expiry returned `410 expired`.
+- **E2E-5 same-value convergence** — PASS. A delivery matching an
+  already-present `.env` value produced no file write (file hash/mtime
+  unchanged) but still consumed the delivery in D1 — the documented
+  lost-consume-retry convergence path.
+- **E2E-6 consume uncertainty** — intentionally not run against production;
+  existing Phase 4 HTTP-client-boundary integration tests remain
+  authoritative, and Phase 5B does not add network-chaos infrastructure.
+- **E2E-7 unreachable origin** — PASS, tested locally against an
+  unreachable loopback origin; CLI failed closed ("Could not reach the
+  RepoBD service") with no `.env` write; production was never contacted.
+- **E2E-8 create rate-limit admission** — PASS. A 25-request synthetic
+  burst against the live create limiter produced 21 successes and 4
+  `429 {"error":"rate_limited"}` rejections (window-boundary timing, not a
+  threshold change — the configured limit remained exactly 20/60s
+  throughout); read-only D1 inspection confirmed exactly the successful
+  count of new rows, i.e. every rejected request produced zero state
+  mutation; `/health` remained `200` throughout; a create after the window
+  reset succeeded again.
+
+Read-only production D1 inspection across every row created during the
+matrix confirmed no plaintext synthetic value, decryption key, or
+repository-identity string ever appeared in server storage. Only synthetic
+test data was used throughout; no real credential was ever entered.
 
 ## Phase 6 — Release hardening — NOT STARTED
 
