@@ -12,11 +12,12 @@ import {
   runSend,
 } from "./commands.js";
 import { redactingOutput } from "./diagnostics.js";
-import { promptForDeliveryLink } from "./prompt.js";
+import { promptForDeliveryLink, promptForSecret } from "./prompt.js";
 
-// A delivery link contains the decryption key. It is read from stdin, never
-// taken as a command-line argument, and never printed back or included in an
-// error.
+// A delivery link contains the decryption key, and so does the secret a sender
+// types. Both are read from stdin, never taken as a command-line argument, and
+// never included in an error. The one link `send` prints on success is the
+// command's product, and is the only place either ever appears in output.
 const out = (line: string): void => {
   console.log(line);
 };
@@ -44,9 +45,16 @@ program.name("repobd").description("RepoBD CLI").version("0.0.0");
 
 program
   .command("send")
-  .description("Show the repository a delivery link would be bound to")
+  .description(
+    "Create a delivery bound to this repository (prompts for the secret)",
+  )
   .action(async () => {
-    const code = await runSend({ cwd: process.cwd(), out, err });
+    const code = await runSend({
+      readSecret: promptForSecret,
+      cwd: process.cwd(),
+      out,
+      err,
+    });
     if (code !== EXIT_OK) {
       process.exitCode = code;
     }

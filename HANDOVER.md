@@ -2,14 +2,15 @@
 
 ## Current state
 
-Phases 0 through 4 are complete, committed and pushed. `repobd pull` runs the
-whole delivery lifecycle. `repobd send` is not complete.
+Phases 0 through 4 are complete, committed and pushed. Phase 5A — the CLI
+sender — is implemented in the working tree and is pending its final
+review/commit gate; it is not committed. `repobd pull` and `repobd send`
+together run a local send → pull round trip.
 
 - branch: `main`
-- HEAD: `266cc971c155b3f3d19ebcbb367677bd38450da2`
-- commit: `feat: complete safe secret apply flow`
-- CI: run `32355153940`, SUCCESS
-- validation at that commit: 806 / 806 tests, 17 files; typecheck PASS; build PASS
+- current committed HEAD: `afc6c8b424b74189128f2133171b4cb0396a5596`
+- commit: `docs: streamline bootstrap and document routing`
+- Phase 5A: uncommitted work in progress on top of that HEAD
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -66,6 +67,40 @@ These are settled. They are the current contract, not open questions.
   from RepoBD.
 - **Abuse controls** rely on Cloudflare rate limiting, TTL and traffic
   metadata, never on plaintext inspection.
+
+## Implemented send lifecycle
+
+```text
+service origin resolved and validated
+→ local repository resolved
+→ KEY prompted on stdin, then the value, as two separate lines
+→ validate exactly one KEY=value (the Phase 4 grammar, unchanged)
+→ fresh key, local encryption
+→ create (ciphertext envelope + fixed 900s TTL, nothing else)
+→ print one delivery link
+```
+
+Properties this ordering carries:
+
+- **Nothing typed against a broken configuration** — a `REPOBD_SERVER_URL` that
+  is not a usable origin, and an unresolvable repository, both stop before the
+  prompt and before any network call.
+- **No secret in argv** — `KEY` and the value are read from stdin. The value is
+  plain and unmasked in v0.1; masking is not what invariant 21 is about.
+- **Nothing created that could not be applied** — the sender validates against
+  the same grammar the receiver re-applies after decrypting, and the 64 KiB
+  bound is enforced by the crypto layer, both before the network.
+- **What reaches the Worker/service** — the ciphertext envelope and TTL only.
+  No plaintext secret, decryption key, or repository identity is sent to the
+  Worker/service.
+- **One line of output carries the link** — the key, the fragment, the value
+  and the origin appear nowhere else, on success or on failure.
+- **Origin policy** — `REPOBD_SERVER_URL` when set, otherwise the
+  local-development default `http://localhost:8787`. HTTPS is required, with
+  one narrow exception: plain HTTP only for a loopback development origin
+  (`localhost`, `127.0.0.1`, `[::1]`). The link builder and the link parser
+  share one policy, so `send` cannot print a link `pull` would refuse. No
+  configuration file, no `--server` flag, no TTL flag.
 
 ## Implemented pull lifecycle
 
@@ -160,17 +195,24 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   `src/apply/env-file.ts` recognizes a conservative single-line `.env` subset
   as an allowlist; `src/apply/target.ts` is the filesystem trust boundary; and
   `src/cli/commands.ts` wires the lifecycle above.
-- **Phase 5 — end-to-end send UX.** NOT STARTED, and needs replanning against
-  the narrowed v0.1 boundary before implementation.
+- **Phase 5A — CLI sender, local development.** IMPLEMENTED, pending final
+  review/commit gate. `src/cli/prompt.ts` reads `KEY` and the value from stdin;
+  `src/cli/commands.ts` (`runSend`) orders origin resolution, repository
+  resolution, grammar validation and local encryption ahead of the single
+  create call; `src/cli/secret-client.ts` adds `create` and validates the
+  configured origin; `src/cli/link.ts` owns the one origin policy the builder
+  and parser share.
+- **Phase 5B — production integration and real end-to-end.** NOT STARTED.
 
-Every phase closed with a Codex security review at blocker 0 / major 0.
+Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **`repobd send` is incomplete.** It resolves and reports the repository a
-  link created here would be bound to. It does not accept a secret, encrypt
-  it, create a delivery, or produce a usable link. A delivery must currently be
-  created by other means to exercise `pull` end to end.
+- **Phase 5A is uncommitted.** The sender is implemented and locally validated,
+  but has not passed its final review/commit gate.
+- **Deferred post-v0.1 by decision, not omission:** a web sender and any
+  environment metadata channel. There is no TTL flag and no `--server` flag,
+  and neither is planned for v0.1.
 - **Release documentation is not written.** The v0.1 boundaries — one
   `KEY=value` per delivery, the conservative `.env` subset, and the absence of
   a shell-`source` guarantee — are now stated in `README.md` and
@@ -204,11 +246,10 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Plan the remainder of the MVP against the narrowed v0.1 boundary — in
-   particular what `send` must do now that a delivery carries exactly one
-   `KEY=value`.
-2. Decide the open product questions that planning surfaces, at the Human Gate.
-3. Only then authorize a Phase 5 implementation cycle.
+1. Close the Phase 5A review/commit gate: review the working tree, then decide
+   whether to commit it.
+2. Only then authorize Phase 5B — production integration and a real end-to-end
+   run.
 
 Production Cloudflare resource creation, deployment and npm publication all
 still require explicit user approval.

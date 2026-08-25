@@ -13,12 +13,13 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 2 | Worker + D1 transport | COMPLETE |
 | 3 | CLI repository identity guard | COMPLETE |
 | 4 | Safe local apply | COMPLETE |
-| 5 | End-to-end send UX | NOT STARTED — needs replanning |
+| 5A | CLI sender, local development only | IMPLEMENTED — pending final review/commit gate |
+| 5B | Production integration and real end-to-end | NOT STARTED |
 | 6 | Release hardening | NOT STARTED |
 
-Current HEAD: `266cc971c155b3f3d19ebcbb367677bd38450da2`,
-`feat: complete safe secret apply flow`. CI run `32355153940` SUCCESS;
-806 / 806 tests across 17 files, typecheck and build pass.
+Current committed HEAD: `afc6c8b424b74189128f2133171b4cb0396a5596`,
+`docs: streamline bootstrap and document routing`. Phase 5A is uncommitted work
+in progress on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -154,39 +155,60 @@ Consume semantics, as implemented:
 
 Every slice closed with a Codex security review at blocker 0 / major 0.
 
-## Phase 5 — End-to-end send UX — NOT STARTED
+## Phase 5A — CLI sender — IMPLEMENTED, pending final review/commit gate
 
-`repobd send` currently resolves and reports the repository a delivery link
-created here would be bound to. It does not accept a secret, encrypt it, create
-a delivery, or produce a usable link.
+The original Phase 5 sketch here assumed a wider payload than v0.1 settled on —
+free text, a `.env` document, environment metadata and target selection — and a
+web send page. A planning cycle replaced it, and the questions it left open were
+decided at the Human Gate before implementation. Phase 5 is split: 5A is the
+CLI sender against local development, 5B is production integration and a real
+end-to-end run.
 
-**This phase needs replanning before implementation.** The scope originally
-sketched here assumed a wider payload than v0.1 settled on — free text, a
-`.env` document, environment metadata and target selection — and a web send
-page. Now that one delivery carries exactly one `KEY=value` and the target is
-fixed, what `send` must collect and how it should collect it are open questions,
-not settled requirements.
+`repobd send` now encrypts one `KEY=value` locally and prints a delivery link
+`repobd pull` can consume. Delivered scope:
 
-Deliberately undecided, and to be resolved at a planning cycle rather than
-assumed here:
+- `KEY` and value prompted as two separate stdin lines. The value is plain and
+  unmasked in v0.1, and no secret is ever accepted as a command-line argument.
+- exactly one `KEY=value`, validated by the existing Phase 4 payload grammar.
+  No new grammar was added.
+- local encryption with a fresh key, before any network call. The 64 KiB bound
+  is the crypto layer's own.
+- create carries the ciphertext envelope and the TTL only — no plaintext, no
+  key, no repository identity. The Worker's existing create endpoint is reused;
+  no endpoint and no cryptographic primitive was added.
+- TTL fixed at 900 seconds. No flag, no prompt, no environment override.
+- service origin from `REPOBD_SERVER_URL`, otherwise the local-development
+  default `http://localhost:8787`. HTTPS is required, with one narrow
+  exception: plain HTTP only for a loopback development origin (`localhost`,
+  `127.0.0.1`, `[::1]`), which is what lets the local flow produce a link that
+  parses. The builder and the parser share one origin policy so they cannot
+  diverge. No configuration file, no `--server` flag.
+- one line of output carries the delivery link; nothing else prints the key,
+  the fragment, the value, or the origin.
 
-- whether a web send page is part of the MVP at all, or whether `send` stays
-  entirely in the CLI
-- how the sender supplies the assignment, and how it avoids the argv and
-  shell-history exposure that `pull` already avoids for the link
-- whether environment metadata is added before the eventual v0.1 release —
-  the current implementation carries no such channel, and this cycle does not
-  decide whether that changes
-- the slice boundaries within Phase 5
+Deferred post-v0.1: a web sender, and environment metadata. The receiver's
+target stays `.env` at the verified work-tree root; target selection is not an
+open question.
 
-Fixed regardless of those answers, including that the receiver's target stays
-`.env` at the verified work-tree root — target selection is not an open Phase 5
-question for v0.1:
+Fixed, as before:
 
 - client-side encryption; the server never receives plaintext or the key
 - the binding is produced from the sender's own resolved repository
 - the delivery link carries key and binding in the fragment only
 - no commit, push, deploy, package install, or arbitrary command execution
+
+## Phase 5B — Production integration and real end-to-end — NOT STARTED
+
+Goal: stand up the minimum Cloudflare surface needed to prove one genuine
+external send → pull round trip.
+
+Scope: a production D1 database and applied migrations, a `wrangler.jsonc`
+production environment, a deployed Worker, the CLI pointed at that origin over
+HTTPS, and minimal Cloudflare-native rate limiting in place *before* the
+end-to-end matrix runs against a public endpoint.
+
+Every step that creates or changes a production Cloudflare resource requires
+explicit user approval first.
 
 ## Phase 6 — Release hardening — NOT STARTED
 

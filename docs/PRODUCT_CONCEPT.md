@@ -78,9 +78,8 @@ Repository identity can be read from Git. RepoBD should enforce it.
 Environment identity has no universal reliable local source. The current
 implementation carries no environment metadata at all — the delivery has no
 channel for it, and repository identity is the only context RepoBD checks.
-Whether that changes before the eventual v0.1 release is an open Phase 5
-question. If environment is added, it must be displayed and confirmed, never
-auto-detected.
+Changing that is deferred post-v0.1. If environment is added, it must be
+displayed and confirmed, never auto-detected.
 
 ### Minimize product surface to minimize attack surface
 

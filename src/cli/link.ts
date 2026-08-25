@@ -4,6 +4,11 @@
 //
 //   https://<repobd-host>/d/<secret-id>#k=<key>&b=<binding-json>
 //
+// This file also owns the one origin policy both ends of that shape are held
+// to — see `checkOriginPolicy`. The builder and the parser share it rather than
+// each carrying their own checks, because the two diverging is exactly the bug
+// where a sender reports success over an origin the receiver then refuses.
+//
 // Everything the server may see is in front of the `#`; everything the server
 // must never see is behind it. A URL fragment is never transmitted by any HTTP
 // client, so the decryption key and the repository binding stay on the two
@@ -41,11 +46,128 @@ const BINDING_PARAM = "b";
  */
 const FRAGMENT_PARAMS: ReadonlySet<string> = new Set([KEY_PARAM, BINDING_PARAM]);
 
-/** Only TLS. A delivery link names a hosted RepoBD service, not a local one. */
-const REQUIRED_PROTOCOL = "https:";
+/** TLS, for every RepoBD service that is not on this machine. */
+const TLS_PROTOCOL = "https:";
+
+/** The one scheme the loopback exception below admits, and only there. */
+const LOCAL_PROTOCOL = "http:";
+
+/**
+ * The hosts a `http:` origin may name, and nothing else.
+ *
+ * The exception exists for one reason: `wrangler dev` serves the Worker over
+ * plain HTTP on this machine, and without it the local development flow could
+ * create a delivery it could never pull back. These three spellings are the
+ * platform's own loopback forms — the same set browsers treat as a secure
+ * context — and they are matched literally. No wider private range, no
+ * `.localhost` suffix, no name that merely resolves to a loopback address:
+ * resolution happens in the network stack, long after this check, and a host
+ * that resolves loopback today is not a host that must.
+ *
+ * `URL.hostname` lowercases and keeps IPv6 brackets, so these are the exact
+ * strings a parsed URL yields.
+ */
+const LOOPBACK_HOSTS: ReadonlySet<string> = new Set([
+  "localhost",
+  "127.0.0.1",
+  "[::1]",
+]);
+
+/** Why an origin is not one RepoBD will address or accept. */
+export type OriginPolicyFailureReason = "unsupported-scheme" | "credentials";
+
+/**
+ * The scheme and credential policy for every RepoBD origin, in one place.
+ *
+ * HTTPS is required of any origin that is not local loopback; loopback may be
+ * plain HTTP. Embedded userinfo is refused under either scheme — a URL that
+ * reads as one host and addresses another is a trick, not a configuration.
+ *
+ * Returns the reason rather than throwing, so both callers keep their own
+ * failure vocabulary.
+ */
+export function checkOriginPolicy(url: URL): OriginPolicyFailureReason | null {
+  const local =
+    url.protocol === LOCAL_PROTOCOL && LOOPBACK_HOSTS.has(url.hostname);
+  if (url.protocol !== TLS_PROTOCOL && !local) {
+    return "unsupported-scheme";
+  }
+  if (url.username !== "" || url.password !== "") {
+    return "credentials";
+  }
+  return null;
+}
+
+export type ServiceOriginFailureReason =
+  | "not-a-url"
+  | OriginPolicyFailureReason
+  | "unexpected-path"
+  | "unexpected-query"
+  | "unexpected-fragment";
+
+export type ServiceOriginResult =
+  | { readonly ok: true; readonly origin: string }
+  | {
+      readonly ok: false;
+      readonly reason: ServiceOriginFailureReason;
+      /** Non-secret, and never the value that failed. */
+      readonly detail: string;
+    };
+
+/**
+ * Validates a configured RepoBD service origin and returns it normalized.
+ *
+ * An origin is a scheme, a host and a port — nothing else. A path, a query, or
+ * a fragment is refused rather than dropped: silently discarding part of what
+ * someone configured is how a request ends up addressed somewhere other than
+ * where they meant. The single normalization is the one that cannot mean
+ * anything else — `https://host/` and `https://host` are the same origin, so a
+ * bare trailing slash is accepted, and `URL.origin` is what comes back.
+ */
+export function parseServiceOrigin(raw: string): ServiceOriginResult {
+  let url: URL;
+  try {
+    url = new URL(raw.trim());
+  } catch {
+    return { ok: false, reason: "not-a-url", detail: "value is not a URL" };
+  }
+  const policy = checkOriginPolicy(url);
+  if (policy === "unsupported-scheme") {
+    return {
+      ok: false,
+      reason: policy,
+      detail: "a RepoBD service is addressed over https, or http on loopback",
+    };
+  }
+  if (policy === "credentials") {
+    return {
+      ok: false,
+      reason: policy,
+      detail: "origin embeds credentials",
+    };
+  }
+  if (url.pathname !== "/") {
+    return { ok: false, reason: "unexpected-path", detail: "origin has a path" };
+  }
+  if (url.search !== "") {
+    return {
+      ok: false,
+      reason: "unexpected-query",
+      detail: "origin has a query string",
+    };
+  }
+  if (url.hash !== "") {
+    return {
+      ok: false,
+      reason: "unexpected-fragment",
+      detail: "origin has a fragment",
+    };
+  }
+  return { ok: true, origin: url.origin };
+}
 
 export interface DeliveryLink {
-  /** `https://host[:port]` — the only part a request is addressed to. */
+  /** `<scheme>://host[:port]` — the only part a request is addressed to. */
   readonly origin: string;
   /** Opaque server-side capability identifying the stored ciphertext. */
   readonly secretId: string;
@@ -132,6 +254,14 @@ function parseFragment(
  * Takes a `CanonicalRepo` rather than a string, so an unresolved or
  * uncanonicalized repository cannot be bound: `serializeBinding` is the only
  * way a descriptor is produced, here as everywhere else.
+ *
+ * The origin is held to `parseServiceOrigin` — the same policy
+ * `parseDeliveryLink` applies — so a link this returns is a link the receiving
+ * side can read. An origin that fails it throws rather than returning a
+ * string, because by the time a link is built the origin has already been
+ * validated where it was configured; reaching here with a bad one is a defect,
+ * not a user error, and it must not become a printed link. The failing value
+ * is not in the message.
  */
 export function buildDeliveryLink(input: {
   readonly origin: string;
@@ -139,10 +269,14 @@ export function buildDeliveryLink(input: {
   readonly key: string;
   readonly repo: CanonicalRepo;
 }): string {
+  const origin = parseServiceOrigin(input.origin);
+  if (!origin.ok) {
+    throw new Error(`delivery link origin is not usable: ${origin.detail}`);
+  }
   const fragment = new URLSearchParams();
   fragment.set(KEY_PARAM, input.key);
   fragment.set(BINDING_PARAM, serializeBinding(input.repo));
-  return `${input.origin.replace(/\/+$/, "")}/d/${input.secretId}#${fragment.toString()}`;
+  return `${origin.origin}/d/${input.secretId}#${fragment.toString()}`;
 }
 
 /**
@@ -160,13 +294,16 @@ export function parseDeliveryLink(raw: string): LinkParseResult {
     return fail("not-a-url", "value is not a URL");
   }
 
-  if (url.protocol !== REQUIRED_PROTOCOL) {
-    return fail("unsupported-scheme", "delivery links use https");
+  // The same scheme and credential policy the builder applies: https, or plain
+  // http only for a loopback development service. A link is pasted from a chat
+  // window, so embedded userinfo — a classic way to make a URL read as one host
+  // and address another — is refused under either scheme.
+  const policy = checkOriginPolicy(url);
+  if (policy === "unsupported-scheme") {
+    return fail(policy, "delivery links use https, or http on loopback");
   }
-  // A link is pasted from a chat window; embedded userinfo is both unexpected
-  // and a classic way to make a URL read as one host and address another.
-  if (url.username !== "" || url.password !== "") {
-    return fail("credentials", "link embeds credentials");
+  if (policy === "credentials") {
+    return fail(policy, "link embeds credentials");
   }
   if (url.search !== "") {
     return fail("unexpected-query", "link has a query string");

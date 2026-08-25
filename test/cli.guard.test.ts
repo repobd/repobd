@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { toBase64Url } from "../src/crypto/envelope-format.js";
 import { validateCanonicalRepoIdentity } from "../src/repo/identity.js";
-import { buildDeliveryLink } from "../src/cli/link.js";
+import { buildDeliveryLink, parseDeliveryLink } from "../src/cli/link.js";
 import {
   runPull,
   runSend,
@@ -15,6 +15,7 @@ import {
   EXIT_OK,
 } from "../src/cli/commands.js";
 import {
+  SERVER_ORIGIN_ENV,
   createHttpSecretClient,
   type SecretClient,
 } from "../src/cli/secret-client.js";
@@ -116,6 +117,13 @@ function spy(): Spy {
       state.clients += 1;
       state.origins.push(origin);
       return {
+        async create() {
+          // `pull` never creates a delivery. Recorded rather than thrown so a
+          // regression shows up as an unexpected call in `calls`, alongside
+          // every other one.
+          state.calls.push({ method: "create", secretId: "", claimToken: "" });
+          return { ok: false, reason: "rejected" };
+        },
         async claim(secretId, claimToken) {
           state.calls.push({ method: "claim", secretId, claimToken });
           return {
@@ -647,12 +655,45 @@ describe("send binds to the sender's own repository", () => {
   async function send(cwd: string) {
     const out: string[] = [];
     const err: string[] = [];
-    const code = await runSend({
-      cwd,
-      out: (line) => out.push(line),
-      err: (line) => err.push(line),
-    });
-    return { code, out, err };
+    // The secret and the service are doubles; the repository is a real one,
+    // which is what this file is about.
+    let asked = 0;
+    // A hosted-style https origin, pinned for the duration of the call so this
+    // file does not depend on whatever the ambient environment names.
+    const previousOrigin = process.env[SERVER_ORIGIN_ENV];
+    process.env[SERVER_ORIGIN_ENV] = ORIGIN;
+    try {
+      const code = await runSend({
+        readSecret: async () => {
+          asked += 1;
+          return { key: "API_KEY", value: "TEST_GUARD_VALUE" };
+        },
+        cwd,
+        out: (line) => out.push(line),
+        err: (line) => err.push(line),
+        createClient: () => ({
+          async create() {
+            return { ok: true, id: SECRET_ID };
+          },
+          async claim() {
+            throw new Error("send must not claim");
+          },
+          async release() {
+            throw new Error("send must not release");
+          },
+          async consume() {
+            throw new Error("send must not consume");
+          },
+        }),
+      });
+      return { code, out, err, asked };
+    } finally {
+      if (previousOrigin === undefined) {
+        delete process.env[SERVER_ORIGIN_ENV];
+      } else {
+        process.env[SERVER_ORIGIN_ENV] = previousOrigin;
+      }
+    }
   }
 
   it("reports the repository a link would be bound to", async () => {
@@ -660,6 +701,17 @@ describe("send binds to the sender's own repository", () => {
     const result = await send(dir);
     expect(result.code).toBe(EXIT_OK);
     expect(result.out.join("\n")).toContain("github.com/acme/alpha");
+    // The link is bound to the repository just resolved from real Git.
+    const link = result.out.at(-1) as string;
+    const parsed = parseDeliveryLink(link);
+    expect(parsed.ok && parsed.link.repo.canonical).toBe("github.com/acme/alpha");
+  });
+
+  it("never asks for a secret it could not deliver", async () => {
+    const dir = await makeRepo("git@git.internal.example.com:acme/alpha.git");
+    const result = await send(dir);
+    expect(result.code).toBe(EXIT_BLOCKED);
+    expect(result.asked).toBe(0);
   });
 
   it("produces no link when the sender's repository is unsupported", async () => {

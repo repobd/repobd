@@ -6,41 +6,41 @@ Deliver encrypted secret text to the intended repository with minimal friction a
 
 ## 2. Primary user flow
 
-### Sender — NOT IMPLEMENTED; Phase 5
+### Sender — CLI implemented (Phase 5A, pending final review/commit gate)
 
-`repobd send` currently resolves and reports the repository a delivery link
-created here would be bound to. It does not accept a secret, encrypt it, create
-a delivery, or produce a usable link.
+`repobd send` accepts a secret, encrypts it locally, creates the delivery and
+prints a usable link. The steps:
 
-The flow below is the **original sketch**, kept for context. It is not a v0.1
-requirement, and several of its steps are open Phase 5 questions rather than
-decisions — in particular whether a web send page exists at all, how the sender
-supplies the assignment without argv or shell-history exposure, and whether
-environment metadata is added before the eventual v0.1 release. The receiver's
-target is settled and is not one of those questions: v0.1 always applies to
-`.env` at the verified work-tree root, and target selection is not offered.
-Any broader target ever existing is a future / post-v0.1 possibility, not a
-Phase 5 decision within v0.1.
+1. Run `repobd send` from the repository the secret belongs to. CLI only; a web
+   send page is deferred post-v0.1.
+2. The CLI resolves the service origin and this repository. Either failing
+   stops the run before anything is typed.
+3. The CLI prompts for `KEY` and then the value, as two separate stdin lines.
+   The value is plain and unmasked in v0.1. Neither is ever a command-line
+   argument.
+4. The assignment is validated against the same grammar the receiver re-applies
+   after decrypting — exactly one `KEY=value`, the existing payload grammar, no
+   new one — before anything reaches the network.
+5. TTL is fixed at 900 seconds. There is no flag, prompt or environment
+   override.
+6. The CLI generates a fresh key and encrypts locally.
+7. The create request carries the ciphertext envelope and the TTL, and nothing
+   else: no plaintext, no key, no repository identity.
+8. The CLI prints one delivery link. Its fragment carries the key and the
+   repository binding, which no HTTP client transmits.
 
-1. Run a RepoBD send command, or open a send page. *(open: CLI-only or
-   web-assisted — Phase 5 decision)*
-2. Enter the secret. *(settled: the payload is exactly one `KEY=value`, so
-   whatever the surface, it carries one assignment and not free text)*
-3. Specify the intended repository. *(settled differently: the binding is
-   produced from the sender's own resolved repository, not typed)*
-4. Optionally specify environment metadata. *(current implementation: no
-   metadata channel exists; whether one is added before the eventual v0.1
-   release is an open Phase 5 question, not decided here. An intended target
-   is not offered — the receiver target is fixed and is not selectable.)*
-5. Choose TTL.
-6. Client encrypts the payload locally.
-7. Server stores ciphertext and non-secret metadata.
-8. RepoBD returns a short-lived delivery URL carrying the decryption material
-   in a form the server never receives.
+Not part of v0.1: environment metadata, a web sender, a target selection, and
+any TTL input surface. The receiver's target is settled: v0.1 always applies to
+`.env` at the verified work-tree root. Any broader target is a future /
+post-v0.1 possibility.
 
-Fixed regardless of how Phase 5 resolves: client-side encryption only; the
-server never receives plaintext, the key, or repository identity; the key and
-binding travel in the link fragment.
+Service origin: `REPOBD_SERVER_URL` when set, otherwise the local-development
+default `http://localhost:8787`. HTTPS is required, with one narrow exception —
+plain HTTP is accepted only for a loopback development origin (`localhost`,
+`127.0.0.1`, `[::1]`). There is no configuration file and no `--server` flag.
+
+Fixed: client-side encryption only; the server never receives plaintext, the
+key, or repository identity; the key and binding travel in the link fragment.
 
 ### Receiver
 
@@ -131,9 +131,8 @@ These block rather than being resolved by guesswork:
 delivery record carries the ciphertext, TTL and lifecycle state, and nothing
 else. Repository identity is the only context RepoBD checks.
 
-Phase 5 may decide whether environment metadata is added before the eventual
-v0.1 release. No such addition is approved yet, and this section does not
-decide the question either way. If environment metadata is added later, these
+Environment metadata is **deferred post-v0.1**. The Phase 5A sender does not
+offer it and no metadata channel is approved. If it is added later, these
 constraints stand:
 
 - environment is metadata, not a machine identity — there is no universal

@@ -4,6 +4,7 @@ import { validateCanonicalRepoIdentity } from "../src/repo/identity.js";
 import {
   buildDeliveryLink,
   parseDeliveryLink,
+  parseServiceOrigin,
   type LinkParseFailureReason,
 } from "../src/cli/link.js";
 
@@ -91,10 +92,40 @@ describe("delivery link fails closed", () => {
     expectBlocked("not a link", "not-a-url");
   });
 
-  it("rejects a non-https scheme", () => {
+  it.each([
+    ["a remote host", "http://repobd.example"],
+    ["a private LAN address", "http://192.168.1.5:8787"],
+    ["a public IP address", "http://203.0.113.7:8787"],
+    ["a host that merely ends in localhost", "http://evil.localhost"],
+    ["a host that merely starts with it", "http://localhost.example.com"],
+    ["another loopback address in 127/8", "http://127.0.0.2:8787"],
+    ["a non-http scheme", "ftp://repobd.example"],
+  ])("rejects plain http on %s", (_label, origin) => {
     expectBlocked(
-      `http://repobd.example/d/${SECRET_ID}#${bindingParam('{"bv":1,"repo":"github.com/acme/alpha"}')}`,
+      `${origin}/d/${SECRET_ID}#${bindingParam('{"bv":1,"repo":"github.com/acme/alpha"}')}`,
       "unsupported-scheme",
+    );
+  });
+
+  it.each([
+    ["localhost", "http://localhost:8787"],
+    ["the IPv4 loopback address", "http://127.0.0.1:8787"],
+    ["the IPv6 loopback address", "http://[::1]:8787"],
+    ["localhost with no port", "http://localhost"],
+  ])("accepts plain http on %s, for local development", (_label, origin) => {
+    const result = parseDeliveryLink(
+      `${origin}/d/${SECRET_ID}#${bindingParam('{"bv":1,"repo":"github.com/acme/alpha"}')}`,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.link.origin).toBe(origin);
+    }
+  });
+
+  it("rejects credentials on a loopback origin too", () => {
+    expectBlocked(
+      `http://user:token@localhost:8787/d/${SECRET_ID}#${bindingParam('{"bv":1,"repo":"github.com/acme/alpha"}')}`,
+      "credentials",
     );
   });
 
@@ -124,6 +155,102 @@ describe("delivery link fails closed", () => {
       `${ORIGIN}/d/..%2F..%2Fetc#${bindingParam('{"bv":1,"repo":"github.com/acme/alpha"}')}`,
       "invalid-secret-id",
     );
+  });
+});
+
+// One policy, applied by both ends. A builder that accepted an origin the
+// parser refuses is the bug this pair exists to make impossible: it would let
+// a sender report success holding a link nobody can pull.
+describe("the origin policy is shared by the builder and the parser", () => {
+  const ACCEPTED = [
+    "https://repobd.example",
+    "https://repobd.example:8443",
+    "http://localhost:8787",
+    "http://127.0.0.1:8787",
+    "http://[::1]:8787",
+  ];
+
+  const REFUSED: readonly [string, string][] = [
+    ["http on a remote host", "http://repobd.example"],
+    ["http on a LAN address", "http://192.168.1.5:8787"],
+    ["http on a public address", "http://203.0.113.7:8787"],
+    ["a lookalike loopback host", "http://localhost.example.com"],
+    ["embedded credentials", "https://user:token@repobd.example"],
+    ["loopback with credentials", "http://user:token@localhost:8787"],
+    ["a path", "http://localhost:8787/api"],
+    ["a query", "http://localhost:8787/?x=1"],
+    ["a fragment", "http://localhost:8787/#k=1"],
+    ["a bare host with no scheme", "repobd.example"],
+    ["nonsense", "not a url"],
+    ["an empty string", ""],
+    ["a non-http scheme", "ftp://repobd.example"],
+    ["a file URL", "file:///etc/passwd"],
+  ];
+
+  it.each(ACCEPTED)("accepts %s and builds a link that parses", (origin) => {
+    expect(parseServiceOrigin(origin)).toEqual({ ok: true, origin });
+    const built = buildDeliveryLink({
+      origin,
+      secretId: SECRET_ID,
+      key: KEY,
+      repo: ALPHA,
+    });
+    const parsed = parseDeliveryLink(built);
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.link.origin).toBe(origin);
+    }
+  });
+
+  it.each(REFUSED)("refuses %s, and refuses to build with it", (_l, origin) => {
+    expect(parseServiceOrigin(origin).ok).toBe(false);
+    expect(() =>
+      buildDeliveryLink({
+        origin,
+        secretId: SECRET_ID,
+        key: KEY,
+        repo: ALPHA,
+      }),
+    ).toThrow();
+  });
+
+  it("names the reason without quoting the value it refused", () => {
+    // The value can be a private hostname, and it can carry credentials.
+    const result = parseServiceOrigin("https://user:token@internal.example");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("credentials");
+      expect(result.detail).not.toContain("token");
+      expect(result.detail).not.toContain("internal.example");
+    }
+    // The builder's throw is subject to the same rule.
+    try {
+      buildDeliveryLink({
+        origin: "https://user:token@internal.example",
+        secretId: SECRET_ID,
+        key: KEY,
+        repo: ALPHA,
+      });
+      expect.unreachable();
+    } catch (error) {
+      expect(String(error)).not.toContain("token");
+      expect(String(error)).not.toContain("internal.example");
+    }
+  });
+
+  it.each([
+    ["a trailing slash", "https://repobd.example/", "https://repobd.example"],
+    [
+      "surrounding whitespace",
+      "  https://repobd.example \n",
+      "https://repobd.example",
+    ],
+    ["an uppercase host", "https://RepoBD.Example", "https://repobd.example"],
+    ["the default https port", "https://repobd.example:443", "https://repobd.example"],
+  ])("normalizes %s", (_label, raw, expected) => {
+    // The only normalizations applied are the ones that cannot mean anything
+    // else. Anything structurally different is refused above, not repaired.
+    expect(parseServiceOrigin(raw)).toEqual({ ok: true, origin: expected });
   });
 });
 

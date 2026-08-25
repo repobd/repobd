@@ -28,24 +28,23 @@ is submitted or any ciphertext is fetched.
 
 ## Components
 
-### Web — NOT IMPLEMENTED; Phase 5
+### Web — NOT IMPLEMENTED; deferred post-v0.1
 
-No web surface exists. Whether one is part of the MVP at all is an open Phase 5
-question, not a settled requirement.
+No web surface exists. Sending is CLI-only in v0.1: a web sender is deferred
+post-v0.1, which keeps browser-side plaintext handling out of the trust
+boundary. It can be added later without changing the wire format.
 
-Recorded as the original sketch, should a web surface be chosen:
+Recorded as the original sketch, should a web surface be built later:
 
 - minimal product/landing page
 - send form
 - client-side encryption
 - delivery URL generation
 
-Whether environment metadata is added before the eventual v0.1 release is a
-Phase 5 question this document does not decide; the current implementation
-carries no such channel. The receiver's target is settled, not deferred: v0.1
+Environment metadata is deferred post-v0.1 as well; no such channel exists. The
+receiver's target is settled, not deferred: v0.1
 always applies to `.env` at the verified work-tree root, and a sender-selected
-target is a future / post-v0.1 possibility at most, not a Phase 5 decision
-within v0.1. If a web surface is built, the landing page and product UI should
+target is a future / post-v0.1 possibility at most. If a web surface is built, the landing page and product UI should
 live in the same project rather than a separate repository.
 
 ### Worker API
@@ -102,7 +101,9 @@ server log, or server-side state holds it.
 
 Responsibilities:
 
-- `send` launcher/workflow
+- `send` workflow: prompt `KEY` and the value on stdin, validate the
+  assignment, encrypt locally, create the delivery with a fixed 900-second TTL,
+  print one delivery link
 - `pull` workflow
 - parse the delivery link locally
 - read current Git repo / origin
@@ -123,6 +124,17 @@ The CLI must not mutate Git or execute arbitrary follow-up commands.
 ```text
 https://<repobd-host>/d/<secret-id>#k=<key>&b=<binding-json>
 ```
+
+The scheme is `https`, with one narrow exception: a loopback development origin
+(`localhost`, `127.0.0.1`, `[::1]`) may use plain `http`, because `wrangler dev`
+serves the Worker over HTTP on the developer's own machine. Embedded
+credentials are refused under either scheme. One policy in `src/cli/link.ts`
+decides this for both the link builder and the link parser, so `send` cannot
+produce a link `pull` would refuse. The CLI's own service origin is resolved
+from `REPOBD_SERVER_URL`, or the local-development default
+`http://localhost:8787`, and is held to the same policy — a value carrying a
+path, a query, a fragment or credentials is refused rather than trimmed into
+shape.
 
 Everything before the `#` is what a request may be addressed to. Everything
 after it is client-side only: an HTTP client never transmits a fragment, so
@@ -200,9 +212,8 @@ path are never repository identity.
 
 **Current implementation: no environment metadata channel exists** — the
 delivery record carries ciphertext, TTL and lifecycle state and nothing else.
-Whether one is added before the eventual v0.1 release is an open Phase 5
-question; this document does not decide it. If it is added later it is display
-and confirmation metadata, never a machine identity.
+Adding one is deferred post-v0.1. If it is added later it is display and
+confirmation metadata, never a machine identity.
 
 Do not introduce unreliable local environment auto-detection simply to claim
 full context automation.

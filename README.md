@@ -24,6 +24,20 @@ One delivery carries exactly one assignment:
 OPENAI_API_KEY=value
 ```
 
+`repobd send`, run inside the repository the secret belongs to, does this:
+
+1. resolves the RepoBD service origin and this repository — either failing stops
+   the run before anything is typed
+2. prompts for the `KEY` and then the value, as two separate stdin lines, never
+   from `argv`. The value is plain and unmasked in v0.1
+3. validates the assignment against the same grammar the receiver applies,
+   **before any network call**
+4. generates a fresh key and encrypts locally
+5. creates the delivery, sending the ciphertext envelope and a fixed 900-second
+   TTL and nothing else — no plaintext, no key, no repository identity
+6. prints one delivery link, whose fragment carries the key and the repository
+   binding that no HTTP client transmits
+
 `repobd pull`, run inside the intended repository, does this:
 
 1. reads the delivery link from a terminal prompt — never from `argv`
@@ -65,13 +79,16 @@ These are deliberate product boundaries, not gaps:
 | 2 | Worker + D1 short-lived ciphertext transport | complete |
 | 3 | CLI repository identity guard | complete |
 | 4 | Safe local apply, end to end | complete |
-| 5 | End-to-end send UX | not started |
+| 5A | CLI sender, local development | implemented, pending final review/commit gate |
+| 5B | Production integration and real end-to-end | not started |
 
-`repobd pull` is implemented end to end.
+`repobd pull` and `repobd send` are both implemented; a send → pull round trip runs locally.
 
-`repobd send` is **not complete**. It currently resolves and reports the repository a delivery link created here would be bound to. It does not yet accept a secret, encrypt it, create a delivery, or produce a usable link — so a delivery must presently be created by other means to exercise `pull`.
+The service origin comes from `REPOBD_SERVER_URL` when it is set, and otherwise defaults to the local-development Worker at `http://localhost:8787`. HTTPS is required, with one narrow exception: plain HTTP is accepted only for a loopback development origin (`localhost`, `127.0.0.1`, `[::1]`). There is no configuration file and no `--server` flag.
 
-No production Cloudflare resources exist. The Wrangler configuration is local-development only.
+A web sender and environment metadata are deferred post-v0.1.
+
+No production Cloudflare resources exist and nothing is deployed. The Wrangler configuration is local-development only.
 
 ## Authoritative docs
 

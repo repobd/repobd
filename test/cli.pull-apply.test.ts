@@ -23,6 +23,7 @@ import { generateCapability } from "../src/cli/capability.js";
 import type {
   ClaimOutcome,
   ConsumeOutcome,
+  CreateOutcome,
   ReleaseOutcome,
   SecretClient,
 } from "../src/cli/secret-client.js";
@@ -172,6 +173,12 @@ function service(
     client: () => {
       state.clients += 1;
       return {
+        async create(): Promise<CreateOutcome> {
+          // `pull` never creates. Recorded like every other call, so a
+          // regression appears in `ops()` rather than as a thrown error.
+          record("create");
+          return { ok: false, reason: "rejected" };
+        },
         async claim(): Promise<ClaimOutcome> {
           record("claim");
           const outcome = outcomeFor("claim");
@@ -570,6 +577,9 @@ describe("the ownership gate before writing is answered by the server", () => {
       err: (l) => err.push(l),
       resolveRepo: resolverFor(dir),
       createClient: () => ({
+        async create() {
+          throw new Error("create must not be reached");
+        },
         async claim() {
           claims += 1;
           return {

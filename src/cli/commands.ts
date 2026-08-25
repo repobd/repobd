@@ -9,8 +9,10 @@
 // client factory is a separate parameter from the guard for that reason —
 // "was the network reached" is a question a test can answer by counting.
 //
-// No secret value, envelope, decryption key, delivery fragment, or raw origin
-// URL is written to either output channel.
+// No secret value, envelope, decryption key, or raw origin URL is written to
+// either output channel. `send` prints one delivery link on stdout — that link
+// is the command's entire product and is the only place a fragment ever
+// appears; nothing else, on either command, prints one.
 //
 // The lifecycle order below is the security property of this file, and it runs
 // one way only:
@@ -34,19 +36,42 @@ import {
 } from "./guard.js";
 import {
   MAX_CLAIM_LEASE_MS,
+  SERVER_ORIGIN_ENV,
   createHttpSecretClient,
   generateClaimToken,
+  resolveServerOrigin,
   type SecretClient,
   type SecretClientFailure,
 } from "./secret-client.js";
-import { promptForReplacement, type ReplacementAnswer } from "./prompt.js";
-import { parseApplyPayload } from "../apply/payload.js";
+import {
+  buildDeliveryLink,
+  type ServiceOriginFailureReason,
+} from "./link.js";
+import {
+  promptForReplacement,
+  type ReplacementAnswer,
+  type SecretInput,
+} from "./prompt.js";
+import {
+  parseApplyPayload,
+  validateAssignment,
+  type AssignmentGrammarFailure,
+} from "../apply/payload.js";
 import {
   applyAssignment,
   inspectApplyTarget,
   ENV_FILENAME,
 } from "../apply/target.js";
-import { decrypt, importKey, parseEnvelope } from "../crypto/envelope.js";
+import {
+  PlaintextTooLargeError,
+  decrypt,
+  encrypt,
+  exportKey,
+  generateKey,
+  importKey,
+  parseEnvelope,
+  serializeEnvelope,
+} from "../crypto/envelope.js";
 
 export type Write = (line: string) => void;
 
@@ -450,27 +475,197 @@ function describeTargetFailure(reason: string, detail: string): string {
   return `${detail}. Nothing was written, and the delivery was not used.`;
 }
 
+export interface SendOptions extends CommandIo {
+  /**
+   * Supplies the assignment to deliver. A function, not two strings, because
+   * the value is the secret and must never arrive as a command-line argument —
+   * it is read from stdin at the point of use.
+   */
+  readonly readSecret: () => Promise<SecretInput>;
+  /** Defaults to the real HTTP client. Constructed only after validation. */
+  readonly createClient?: (origin: string) => SecretClient;
+}
+
 /**
- * `repobd send` — Phase 3 scope only: report the repository a delivery link
- * created here would be bound to.
+ * How long a delivery lives. Fifteen minutes, fixed.
  *
- * The binding comes from the sender's own repository through the same
- * resolver the receiver uses, so both sides agree by construction. There is
- * no free-text repository entry in v0.1, and an unresolvable repository
- * produces no link at all rather than an unbound one.
- *
- * Encrypting and creating the delivery is not part of this phase.
+ * Not a user-input surface in v0.1: there is no flag, no prompt, and no
+ * environment override, so there is no CLI-side range to validate. The Worker
+ * enforces its own maximum on whatever it is sent, and this constant is far
+ * inside it.
  */
-export async function runSend(options: CommandIo): Promise<number> {
-  const local = await resolveSenderBinding(options.cwd, options.resolveRepo);
-  if (!local.ok) {
-    options.err(describeRepoFailure(local.reason));
-    options.err("No delivery link was created.");
+export const SEND_TTL_SECONDS = 900;
+
+/** The one sentence every refused send ends with. */
+const NO_LINK = "No delivery link was created.";
+
+/**
+ * The user-facing sentence for input that is not a deliverable assignment.
+ *
+ * Fixed strings with nothing interpolated, for the reason `payload.ts` gives:
+ * a rejected key can itself be secret material — someone who pastes their API
+ * key at the `KEY` prompt has typed a secret into a field RepoBD is about to
+ * complain about.
+ */
+function describeAssignmentFailure(reason: AssignmentGrammarFailure): string {
+  switch (reason) {
+    case "invalid-key":
+      return "A secret name must be a variable name: a letter or underscore, then letters, digits or underscores.";
+    case "empty-value":
+      return "A secret value cannot be empty.";
+    case "unsupported-value":
+      return "That value is outside the character set RepoBD v0.1 can deliver: printable ASCII, no spaces, and none of \" ' \\ # $ ` ; & | < >.";
+  }
+}
+
+/**
+ * The user-facing sentence for a service origin RepoBD will not address.
+ *
+ * Names the environment variable, never its value: what someone typed into it
+ * can be a private hostname, and it can also be a URL with credentials in it,
+ * which is the one thing invariant 20 says must not be echoed back. Every
+ * sentence therefore says what a valid origin looks like instead of what this
+ * one was.
+ */
+function describeOriginFailure(reason: ServiceOriginFailureReason): string {
+  const prefix = `${SERVER_ORIGIN_ENV} is not a usable RepoBD service origin`;
+  switch (reason) {
+    case "not-a-url":
+      return `${prefix}: it is not a URL.`;
+    case "unsupported-scheme":
+      return `${prefix}: use https, or http only for a local development service on localhost.`;
+    case "credentials":
+      return `${prefix}: it embeds credentials.`;
+    case "unexpected-path":
+      return `${prefix}: it has a path. An origin is a scheme, a host and a port.`;
+    case "unexpected-query":
+      return `${prefix}: it has a query string. An origin is a scheme, a host and a port.`;
+    case "unexpected-fragment":
+      return `${prefix}: it has a fragment. An origin is a scheme, a host and a port.`;
+  }
+}
+
+/**
+ * `repobd send` — encrypt one `KEY=value` and produce a delivery link bound to
+ * this repository.
+ *
+ * The order, and it runs one way only:
+ *
+ *   0. resolve and validate the service origin. It is the cheapest thing that
+ *      can be wrong and the earliest thing that can be checked, so a
+ *      misconfigured `REPOBD_SERVER_URL` stops before Git is read, before a
+ *      person is asked to type a secret, and — the point — before anything is
+ *      created on a server.
+ *   1. resolve this repository. An unresolvable one produces no link at all
+ *      rather than an unbound one, and it stops here — before a person has
+ *      been asked to type a secret RepoBD could not have delivered.
+ *   2. read KEY and value from stdin. Never argv; see `prompt.ts`.
+ *   3. validate against the same grammar the receiver will re-apply after
+ *      decrypting, so a payload that could not be applied is never created.
+ *      Nothing has touched the network at this point.
+ *   4. generate a fresh key and encrypt. The 64 KiB bound lives inside
+ *      `encrypt`, so an oversized value is refused here, still before any
+ *      request.
+ *   5. create — the only network call, carrying the ciphertext envelope and a
+ *      TTL and nothing else. No repository identity, no key, no plaintext.
+ *   6. build the link, whose fragment carries the key and the binding, and
+ *      print it. The fragment is never transmitted by any HTTP client, so the
+ *      key reaches the receiver only through whatever channel the two people
+ *      already use.
+ *
+ * The binding comes from the sender's own repository through the same resolver
+ * the receiver uses, so both sides agree by construction. There is no
+ * free-text repository entry in v0.1.
+ */
+export async function runSend(options: SendOptions): Promise<number> {
+  // Captured synchronously before the first suspension, for the reason spelled
+  // out in `runPull`: `readSecret()` suspends for as long as a person takes to
+  // type, and anything reachable from `options` could otherwise be changed
+  // during that window — including which repository the link binds to and
+  // where the ciphertext is sent.
+  const readSecret = options.readSecret;
+  const out = options.out;
+  const err = options.err;
+  const cwd = options.cwd;
+  const resolveRepo = options.resolveRepo;
+  const createClient = options.createClient ?? createHttpSecretClient;
+
+  // Step 0. Read once, validated once, and nothing prints it — not on success
+  // and not in the failure below, which names the variable rather than quoting
+  // what was in it.
+  const resolvedOrigin = resolveServerOrigin();
+  if (!resolvedOrigin.ok) {
+    err(describeOriginFailure(resolvedOrigin.reason));
+    err(NO_LINK);
     return EXIT_BLOCKED;
   }
-  options.out(`This repository: ${local.repo.canonical}`);
-  options.out(
-    "A delivery link created here would be bound to that repository. Sending is not implemented yet.",
+  const origin = resolvedOrigin.origin;
+
+  // Step 1.
+  const local = await resolveSenderBinding(cwd, resolveRepo);
+  if (!local.ok) {
+    err(describeRepoFailure(local.reason));
+    err(NO_LINK);
+    return EXIT_BLOCKED;
+  }
+  const repo = local.repo;
+  out(`This repository: ${repo.canonical}`);
+
+  // Step 2. Held in locals for exactly as long as the encryption needs them,
+  // and never written to either output channel.
+  const input = await readSecret();
+
+  // Step 3. The receiver's grammar, applied by the sender, so a delivery that
+  // could never be applied is never created — and applied before anything
+  // reaches the network.
+  const validated = validateAssignment(input.key, input.value);
+  if (!validated.ok) {
+    err(describeAssignmentFailure(validated.reason));
+    err(NO_LINK);
+    return EXIT_BLOCKED;
+  }
+  // The canonical payload, built from the validated halves rather than from
+  // the raw input, so the bytes that get encrypted are the bytes that passed.
+  const payload = `${validated.assignment.key}=${validated.assignment.value}`;
+
+  // Step 4. Fresh key per delivery, never reused and never stored.
+  let envelope: string;
+  let keyMaterial: string;
+  try {
+    const cryptoKey = await generateKey();
+    envelope = serializeEnvelope(await encrypt(payload, cryptoKey));
+    keyMaterial = await exportKey(cryptoKey);
+  } catch (error) {
+    // Still no network call. `encrypt` enforces the 64 KiB payload bound
+    // itself, which is why nothing above re-checks it.
+    err(
+      error instanceof PlaintextTooLargeError
+        ? "That secret is larger than RepoBD's 64 KiB limit."
+        : "RepoBD could not encrypt this secret.",
+    );
+    err(NO_LINK);
+    return EXIT_BLOCKED;
+  }
+
+  // Step 5. Past this point, and only past it, the network is in play.
+  const client = createClient(origin);
+  const created = await client.create(envelope, SEND_TTL_SECONDS);
+  if (!created.ok) {
+    err(describeClientFailure(created.reason));
+    err(NO_LINK);
+    return EXIT_BLOCKED;
+  }
+
+  // Step 6. The one line that carries a fragment, and the command's product.
+  const link = buildDeliveryLink({
+    origin,
+    secretId: created.id,
+    key: keyMaterial,
+    repo,
+  });
+  out(
+    "Delivery created. It can be used once, in that repository, within 15 minutes.",
   );
+  out(link);
   return EXIT_OK;
 }
