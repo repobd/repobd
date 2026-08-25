@@ -1,0 +1,49 @@
+{
+  // Phase 5B production config. Deliberately a separate, self-contained
+  // file rather than a named `env.production` block in wrangler.jsonc:
+  // Wrangler bindings are not inherited into named environments (rate-limit
+  // bindings in particular are declared per-environment), so a standalone
+  // file is the form least likely to let a local/production binding mix by
+  // accident. Every production-mutating command must pass
+  // `--config wrangler.production.jsonc` explicitly — there is no bare
+  // command that can resolve against this file by default.
+  //
+  // No `account_id` and no `routes`/custom domain in Phase 5B — deploying
+  // targets the account's `workers.dev` subdomain, per the settled Phase 5B
+  // decision. No `d1_databases` entry exists here yet: Phase 5B-1 is
+  // explicitly prohibited from writing a production D1 binding, real or
+  // placeholder. Human Gate A creates the database and adds the real
+  // binding (with its real `database_id`) as its own reviewed step —
+  // see the Phase 5B plan.
+  "name": "repobd-worker",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-11",
+  // PRODUCTION thresholds — the values that actually get deployed and
+  // enforced. Deliberately different from `wrangler.jsonc` (local/shared-
+  // test, 1000/60s on both — see its comment) and, on paper, distinct
+  // `namespace_id`s from `wrangler.ratelimit-test.jsonc` (isolated test,
+  // same 20/60 + 120/60 thresholds but a separate Miniflare instance), so
+  // no environment's counters can share a bucket with another's.
+  //
+  // `namespace_id` must be a string containing a positive integer (not an
+  // arbitrary label) and is a non-secret configuration identifier — never
+  // derived from a secret, key, repository identity, delivery id, claim
+  // token, or client IP. These two RepoBD-specific IDs are stable and
+  // distinct from each other. Account-wide uniqueness against any other
+  // Cloudflare resource already on the target account has NOT been
+  // verified in this cycle — no production Cloudflare mutation is
+  // authorized merely to check it, so this stays a documented Gate B
+  // pre-deploy requirement rather than a claim.
+  "ratelimits": [
+    {
+      "name": "CREATE_LIMITER",
+      "namespace_id": "2001",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "LIFECYCLE_LIMITER",
+      "namespace_id": "2002",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ]
+}

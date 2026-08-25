@@ -10,6 +10,18 @@
 // Consume marks a secret used, but does not prove the receiver applied it —
 // that guarantee belongs to the later local apply flow, which calls consume
 // only after verifying its own write. Release hands an unused claim back.
+//
+// Phase 5B: a Cloudflare Workers Rate Limiting admission check (see
+// `checkRateLimit`) runs ahead of create and ahead of claim/consume/release,
+// on two separate namespaces (`CREATE_LIMITER`, `LIFECYCLE_LIMITER`) so
+// retry/renewal traffic on one route can never exhaust the other's budget.
+// The threshold each namespace enforces is set per Wrangler config, not
+// here — `wrangler.jsonc` (local dev/shared tests) uses a generous
+// local-only ceiling, `wrangler.production.jsonc` carries the real fixed
+// production policy, and `wrangler.ratelimit-test.jsonc` mirrors production
+// for an isolated test. It is a coarse, IP-keyed abuse throttle, not
+// authentication, and never touches state — a rejection returns 429 before
+// any handler below runs.
 
 import {
   canonicalizeEnvelope,
@@ -28,6 +40,14 @@ import {
 
 interface Env {
   DB: D1Database;
+  // Phase 5B: Cloudflare Workers Rate Limiting. Two separate namespaces —
+  // see wrangler.jsonc, wrangler.production.jsonc, and
+  // wrangler.ratelimit-test.jsonc for each config's own threshold — so
+  // create traffic and lifecycle (claim/consume/release) retry traffic can
+  // never share one budget. A binding alone enforces nothing;
+  // `checkRateLimit` below is what actually calls it.
+  CREATE_LIMITER: RateLimit;
+  LIFECYCLE_LIMITER: RateLimit;
 }
 
 const SECRET_ACTION_PATH = /^\/api\/secrets\/([^/]+)\/(claim|consume|release)$/;
@@ -46,6 +66,36 @@ function fail(error: string, status: number): Response {
 
 const badRequest = () => fail("bad_request", 400);
 const notFound = () => fail("not_found", 404);
+const rateLimited = () => fail("rate_limited", 429);
+
+/**
+ * Coarse per-request rate-limit key. `CF-Connecting-IP` is the header
+ * Cloudflare's edge sets on every request it forwards to a Worker; it is
+ * absent when running locally without that edge (`wrangler dev`, Vitest),
+ * where every request then shares one bucket. This is an abuse throttle,
+ * not identity or authentication — RepoBD v0.1 has no account or API key to
+ * key on instead, and a shared IP (NAT, corporate egress) can be coarsely
+ * over-throttled by it. See docs/SECURITY_INVARIANTS.md and the Phase 5B
+ * plan. Never a secret, key, repository identity, or delivery fragment.
+ */
+function rateLimitKey(request: Request): string {
+  return request.headers.get("CF-Connecting-IP") ?? "unknown";
+}
+
+/**
+ * Request-admission guard: asks `limiter` whether this request may proceed,
+ * before the caller's route handler runs. Returns a 429 response when the
+ * limiter rejects, `null` when it permits — the caller's existing behavior
+ * is otherwise untouched. Never inspects or logs the request body, the
+ * secret id, or the claim id.
+ */
+async function checkRateLimit(
+  limiter: RateLimit,
+  request: Request,
+): Promise<Response | null> {
+  const { success } = await limiter.limit({ key: rateLimitKey(request) });
+  return success ? null : rateLimited();
+}
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown> | null> {
   const text = await readBoundedText(request, MAX_REQUEST_BODY_BYTES);
@@ -198,6 +248,12 @@ export default {
           headers: { Allow: "POST" },
         });
       }
+      // Admission check before any state mutation. A rejected request never
+      // reaches handleCreate, so no row is written on a 429.
+      const limited = await checkRateLimit(env.CREATE_LIMITER, request);
+      if (limited !== null) {
+        return limited;
+      }
       return handleCreate(request, env);
     }
 
@@ -208,6 +264,15 @@ export default {
           status: 405,
           headers: { Allow: "POST" },
         });
+      }
+      // Same admission check, on the lifecycle namespace — deliberately a
+      // separate, more generous budget from create's, so legitimate claim
+      // renewal and idempotent retry/recovery are not the traffic that
+      // exhausts it. Still strictly before any of claim/consume/release
+      // touches D1.
+      const limited = await checkRateLimit(env.LIFECYCLE_LIMITER, request);
+      if (limited !== null) {
+        return limited;
       }
       const id = action[1] as string;
       switch (action[2]) {

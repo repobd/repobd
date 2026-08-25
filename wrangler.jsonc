@@ -11,5 +11,47 @@
       "binding": "DB",
       "database_name": "repobd-local"
     }
+  ],
+  // Phase 5B: Cloudflare-native Workers Rate Limiting. `namespace_id` is a
+  // developer-chosen label, not a Cloudflare-provisioned resource — unlike
+  // D1, no `wrangler` creation step is needed before this binding works,
+  // locally (simulated by Miniflare) or once deployed. Two separate
+  // namespaces so create traffic can never be throttled by lifecycle retry
+  // traffic or vice versa.
+  //
+  // This file (`wrangler.jsonc`) is the LOCAL/SHARED-TEST config only — the
+  // one `wrangler dev` uses and the one worker.smoke/worker.d1/
+  // worker.secrets.test.ts run against. Its limits are deliberately NOT the
+  // production thresholds: this file's bindings are exercised by every
+  // other Worker test file in the suite, all of which share one Miniflare
+  // Worker instance and therefore one rate-limit counter per namespace for
+  // their entire run — there is no per-test reset available that does not
+  // also wipe D1's Durable-Object-backed storage. A generous local-only
+  // ceiling here (1000/60s on both) still proves the binding and the
+  // admission-check code path on every request (permit-path behavior is
+  // what those tests exercise); it must never be read as, or described as,
+  // production behavior. The exact fixed production thresholds — 20/60s
+  // create, 120/60s lifecycle — live only in `wrangler.production.jsonc`
+  // (what actually gets deployed) and are proven end-to-end, at those exact
+  // values, by `test/worker.ratelimit.test.ts`, which runs against its own
+  // isolated Miniflare instance via `wrangler.ratelimit-test.jsonc` — see
+  // both those files.
+  //
+  // `namespace_id` must be a string containing a positive integer (not an
+  // arbitrary label) and is a non-secret configuration identifier — never
+  // derived from a secret, key, repository identity, delivery id, claim
+  // token, or client IP. The two bindings below use distinct IDs so their
+  // counters can never share a bucket.
+  "ratelimits": [
+    {
+      "name": "CREATE_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 1000, "period": 60 }
+    },
+    {
+      "name": "LIFECYCLE_LIMITER",
+      "namespace_id": "1002",
+      "simple": { "limit": 1000, "period": 60 }
+    }
   ]
 }

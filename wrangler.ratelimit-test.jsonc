@@ -1,0 +1,37 @@
+{
+  // Test-only config, used exclusively by test/worker.ratelimit.test.ts via
+  // test/vitest.worker-ratelimit.config.ts. It exists so that test can
+  // exercise the exact fixed production thresholds (20/60s create, 120/60s
+  // lifecycle — see wrangler.production.jsonc) end-to-end, in a Miniflare
+  // Worker instance of its own: a shared instance would mean every other
+  // worker test's create/claim/consume/release calls count against the
+  // same budget this file's tests are trying to measure precisely. Never
+  // used by `wrangler dev`, never deployed, never referenced by a
+  // production-mutating script.
+  "name": "repobd-worker-ratelimit-test",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-11",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "repobd-local"
+    }
+  ],
+  // Same exact thresholds as wrangler.production.jsonc, so this test proves
+  // the real production numbers — but distinct `namespace_id`s (still
+  // positive-integer strings) from both the local (wrangler.jsonc) and
+  // production configs, so this isolated run's counters never share a
+  // bucket with either.
+  "ratelimits": [
+    {
+      "name": "CREATE_LIMITER",
+      "namespace_id": "3001",
+      "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "LIFECYCLE_LIMITER",
+      "namespace_id": "3002",
+      "simple": { "limit": 120, "period": 60 }
+    }
+  ]
+}

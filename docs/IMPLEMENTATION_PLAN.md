@@ -13,13 +13,13 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 2 | Worker + D1 transport | COMPLETE |
 | 3 | CLI repository identity guard | COMPLETE |
 | 4 | Safe local apply | COMPLETE |
-| 5A | CLI sender, local development only | IMPLEMENTED — pending final review/commit gate |
-| 5B | Production integration and real end-to-end | NOT STARTED |
+| 5A | CLI sender, local development only | COMPLETE |
+| 5B | Production integration and real end-to-end | IN PROGRESS — Phase 5B-1 implemented, pending Codex Review A / Human Gate A |
 | 6 | Release hardening | NOT STARTED |
 
-Current committed HEAD: `afc6c8b424b74189128f2133171b4cb0396a5596`,
-`docs: streamline bootstrap and document routing`. Phase 5A is uncommitted work
-in progress on top of it.
+Current committed HEAD: `7dbebba98b68a9b7df1ffa371e7e8bd7fe267aa3`,
+`feat: complete CLI sender flow`. Phase 5B-1 is uncommitted work in progress
+on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -155,7 +155,7 @@ Consume semantics, as implemented:
 
 Every slice closed with a Codex security review at blocker 0 / major 0.
 
-## Phase 5A — CLI sender — IMPLEMENTED, pending final review/commit gate
+## Phase 5A — CLI sender — COMPLETE
 
 The original Phase 5 sketch here assumed a wider payload than v0.1 settled on —
 free text, a `.env` document, environment metadata and target selection — and a
@@ -197,18 +197,54 @@ Fixed, as before:
 - the delivery link carries key and binding in the fragment only
 - no commit, push, deploy, package install, or arbitrary command execution
 
-## Phase 5B — Production integration and real end-to-end — NOT STARTED
+## Phase 5B — Production integration and real end-to-end — IN PROGRESS
 
 Goal: stand up the minimum Cloudflare surface needed to prove one genuine
 external send → pull round trip.
 
-Scope: a production D1 database and applied migrations, a `wrangler.jsonc`
-production environment, a deployed Worker, the CLI pointed at that origin over
-HTTPS, and minimal Cloudflare-native rate limiting in place *before* the
-end-to-end matrix runs against a public endpoint.
+Scope: a production D1 database and applied migrations, a
+`wrangler.production.jsonc` production configuration, a deployed Worker, the
+CLI pointed at that origin over HTTPS, and minimal Cloudflare-native rate
+limiting in place *before* the end-to-end matrix runs against a public
+endpoint.
 
 Every step that creates or changes a production Cloudflare resource requires
-explicit user approval first.
+explicit user approval first, split across three Human Gates (A: create the
+D1 database and bind its real id; B: migrate, activate rate limiting, and
+deploy; C: run the real E2E matrix).
+
+**Phase 5B-1 — rate-limit enforcement + non-executable production D1
+shape — implemented, pending Codex Review A / Human Gate A.** Cloudflare
+Workers Rate Limiting bindings (`CREATE_LIMITER` on `POST /api/secrets`,
+`LIFECYCLE_LIMITER` on claim/consume/release) exist in three Wrangler
+configs, each with a different role and threshold:
+
+- `wrangler.jsonc` — local dev and the existing shared worker test suite.
+  Both limiters set to `1000` requests/60s: a generous local-only ceiling,
+  **not** the production threshold, so the pre-existing tests (which share
+  one Miniflare instance and therefore one counter per namespace for their
+  whole run) are never throttled by it.
+- `wrangler.production.jsonc` — what actually deploys. `CREATE_LIMITER`
+  exactly `20` requests/60s, `LIFECYCLE_LIMITER` exactly `120` requests/60s
+  — the real production policy. Deliberately no `d1_databases` entry: no
+  fake or placeholder `database_id` is committed; the real binding is added
+  only at Human Gate A, from the actual `wrangler d1 create` output.
+- `wrangler.ratelimit-test.jsonc` — test-only, its own isolated Miniflare
+  instance (via `test/vitest.worker-ratelimit.config.ts`). Same exact
+  `20`/`120` per-60s thresholds as production, so
+  `test/worker.ratelimit.test.ts` proves the real numbers end-to-end
+  without any other test file's traffic sharing its counters.
+
+`src/worker/index.ts` enforces via `limit({ key })`, keyed on the coarse
+`CF-Connecting-IP` signal, returning 429 before any D1 mutation on
+rejection. `/health` and unmatched routes never consult a limiter. Every
+`ratelimits` `namespace_id` in all three configs is a distinct
+positive-integer string — non-secret configuration, never derived from a
+secret, key, repository identity, delivery id, claim token, or client IP;
+account-wide uniqueness against other Cloudflare resources has not been
+verified and is documented as a Gate B pre-deploy requirement, not a claim.
+No Cloudflare resource has been created, no migration applied, nothing
+deployed, no E2E run.
 
 ## Phase 6 — Release hardening — NOT STARTED
 

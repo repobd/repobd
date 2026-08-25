@@ -2,15 +2,16 @@
 
 ## Current state
 
-Phases 0 through 4 are complete, committed and pushed. Phase 5A — the CLI
-sender — is implemented in the working tree and is pending its final
-review/commit gate; it is not committed. `repobd pull` and `repobd send`
-together run a local send → pull round trip.
+Phases 0 through 5A are complete and committed. `repobd pull` and `repobd
+send` together run a local send → pull round trip. Phase 5B — production
+integration and a real end-to-end run — is in progress.
 
 - branch: `main`
-- current committed HEAD: `afc6c8b424b74189128f2133171b4cb0396a5596`
-- commit: `docs: streamline bootstrap and document routing`
-- Phase 5A: uncommitted work in progress on top of that HEAD
+- current committed HEAD: `7dbebba98b68a9b7df1ffa371e7e8bd7fe267aa3`
+- commit: `feat: complete CLI sender flow`
+- Phase 5B: in progress. Phase 5B-1 (rate-limit enforcement and non-
+  executable production D1 shape) is implemented, pending Codex Review A
+  and Human Gate A. No Cloudflare resource has been created.
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -195,21 +196,53 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   `src/apply/env-file.ts` recognizes a conservative single-line `.env` subset
   as an allowlist; `src/apply/target.ts` is the filesystem trust boundary; and
   `src/cli/commands.ts` wires the lifecycle above.
-- **Phase 5A — CLI sender, local development.** IMPLEMENTED, pending final
-  review/commit gate. `src/cli/prompt.ts` reads `KEY` and the value from stdin;
+- **Phase 5A — CLI sender, local development** (`7dbebba`). COMPLETE.
+  `src/cli/prompt.ts` reads `KEY` and the value from stdin;
   `src/cli/commands.ts` (`runSend`) orders origin resolution, repository
   resolution, grammar validation and local encryption ahead of the single
   create call; `src/cli/secret-client.ts` adds `create` and validates the
   configured origin; `src/cli/link.ts` owns the one origin policy the builder
   and parser share.
-- **Phase 5B — production integration and real end-to-end.** NOT STARTED.
+- **Phase 5B — production integration and real end-to-end.** IN PROGRESS.
+  Phase 5B-1 (rate-limit enforcement + non-executable production D1 shape) is
+  implemented across three distinct Wrangler configs, each with a different
+  role:
+  - `wrangler.jsonc` (local dev + the existing shared worker test suite):
+    `CREATE_LIMITER` and `LIFECYCLE_LIMITER`, both `1000` requests/60s — a
+    generous local-only ceiling, **not** the production threshold, chosen so
+    the pre-existing 890+ tests sharing one Miniflare instance are never
+    throttled by it.
+  - `wrangler.production.jsonc` (what actually deploys, not yet used):
+    `CREATE_LIMITER` exactly `20`/60s, `LIFECYCLE_LIMITER` exactly `120`/60s
+    — the real production policy. No `d1_databases` entry — that is added
+    only at Human Gate A, once the database actually exists; no fake or
+    placeholder `database_id` is committed.
+  - `wrangler.ratelimit-test.jsonc` (test-only, its own isolated Miniflare
+    instance via `test/vitest.worker-ratelimit.config.ts`): the same exact
+    `20`/`120` per 60s thresholds as production, so
+    `test/worker.ratelimit.test.ts` proves the real numbers end-to-end
+    without sharing a counter with any other test file.
+
+  `src/worker/index.ts` calls `limit({ key })` on the matching binding ahead
+  of create and ahead of claim/consume/release, keyed on the coarse
+  `CF-Connecting-IP` signal, returning 429 before any D1 mutation on
+  rejection. `/health` and unmatched routes never consult a limiter. Every
+  `ratelimits` `namespace_id` across all three configs is a distinct
+  positive-integer string, non-secret, never derived from a secret, key,
+  repository identity, delivery id, claim token, or client IP;
+  account-wide uniqueness against other Cloudflare resources on the target
+  account has not been verified and is a documented Gate B pre-deploy
+  requirement, not a claim. No Cloudflare resource has been created, no
+  migration applied, nothing deployed, no E2E run. Not yet reviewed by
+  Codex.
 
 Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 5A is uncommitted.** The sender is implemented and locally validated,
-  but has not passed its final review/commit gate.
+- **Phase 5B-1 is implemented but not yet reviewed.** The rate-limit
+  enforcement and config are locally validated but have not passed Codex
+  Review A or Human Gate A.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
@@ -246,10 +279,13 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Close the Phase 5A review/commit gate: review the working tree, then decide
-   whether to commit it.
-2. Only then authorize Phase 5B — production integration and a real end-to-end
-   run.
+1. Send the Phase 5B-1 working tree to Codex for Review A (rate-limit
+   binding syntax/enforcement, no fake D1 identifier, explicit production
+   targeting — see the Phase 5B plan).
+2. Human Gate A: authorize creating the dedicated RepoBD production D1
+   database, then add its real binding to `wrangler.production.jsonc`.
+3. Human Gate B: authorize the migration, rate-limit activation, and deploy.
+4. Human Gate C: authorize the real E2E matrix.
 
 Production Cloudflare resource creation, deployment and npm publication all
 still require explicit user approval.

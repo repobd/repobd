@@ -11,6 +11,7 @@
     "../../test/apply-migrations.ts",
     "../../test/worker.smoke.test.ts",
     "../../test/worker.d1.test.ts",
-    "../../test/worker.secrets.test.ts"
+    "../../test/worker.secrets.test.ts",
+    "../../test/worker.ratelimit.test.ts"
   ]
 }
