@@ -10,14 +10,27 @@
   //
   // No `account_id` and no `routes`/custom domain in Phase 5B — deploying
   // targets the account's `workers.dev` subdomain, per the settled Phase 5B
-  // decision. No `d1_databases` entry exists here yet: Phase 5B-1 is
-  // explicitly prohibited from writing a production D1 binding, real or
-  // placeholder. Human Gate A creates the database and adds the real
-  // binding (with its real `database_id`) as its own reviewed step —
-  // see the Phase 5B plan.
+  // decision.
   "name": "repobd-worker",
   "main": "src/worker/index.ts",
   "compatibility_date": "2026-08-11",
+  // Human Gate A: the real, dedicated RepoBD production D1 database.
+  // Created via `wrangler d1 create repobd-production` — verified via a
+  // read-only `wrangler d1 list`/`d1 info` immediately afterward: exactly
+  // one database on the account, name and id both match. `database_id` is
+  // Cloudflare's own generated UUID for that database, not a secret — it
+  // is a non-secret resource identifier, the same way `database_name` is.
+  // Binding name is `DB`, matching `interface Env` in src/worker/index.ts
+  // and the local dev binding in wrangler.jsonc — not Wrangler's suggested
+  // default binding name. No migration has been applied to this database
+  // yet (`num_tables: 0` at creation) — that is Human Gate B's action.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "repobd-production",
+      "database_id": "79800646-dc8a-4dca-97c9-81fed33dc94a"
+    }
+  ],
   // PRODUCTION thresholds — the values that actually get deployed and
   // enforced. Deliberately different from `wrangler.jsonc` (local/shared-
   // test, 1000/60s on both — see its comment) and, on paper, distinct
