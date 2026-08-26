@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import {
   REDACTED,
   redact,
   redactionTargets,
 } from "../src/cli/diagnostics.js";
+
+// Read from the same package.json the CLI reads at runtime, not a second
+// hardcoded literal — see cli.smoke.test.ts for the identical reasoning.
+const packageVersion = (
+  JSON.parse(
+    readFileSync(
+      path.resolve(import.meta.dirname, "../package.json"),
+      "utf8",
+    ),
+  ) as { version: string }
+).version;
 
 // The CLI diagnostic safety boundary.
 //
@@ -175,7 +187,7 @@ describe("ordinary diagnostics stay useful", () => {
 
   it("prints the version", () => {
     const result = runCli("--version");
-    expect(result.stdout.trim()).toBe("0.0.0");
+    expect(result.stdout.trim()).toBe(packageVersion);
   });
 
   it("still says what kind of mistake an unknown command was", () => {

@@ -3,6 +3,8 @@
 // themselves live in `commands.ts` so they can be tested without a process.
 
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   EXIT_BLOCKED,
   EXIT_OK,
@@ -13,6 +15,19 @@ import {
 } from "./commands.js";
 import { redactingOutput } from "./diagnostics.js";
 import { promptForDeliveryLink, promptForSecret } from "./prompt.js";
+
+// `package.json` is the one place the release version is written; nothing
+// here restates it. This file lives two directories below the package root
+// both as `src/cli/index.ts` (run directly via `tsx`) and, after build, as
+// `dist/cli/index.js` in an installed npm package — `package.json` sits at
+// `../../package.json` from either location, since npm always ships it
+// alongside whatever `files` lists.
+const packageJson = JSON.parse(
+  readFileSync(
+    fileURLToPath(new URL("../../package.json", import.meta.url)),
+    "utf8",
+  ),
+) as { version: string };
 
 // A delivery link contains the decryption key, and so does the secret a sender
 // types. Both are read from stdin, never taken as a command-line argument, and
@@ -41,7 +56,7 @@ program.configureOutput(
   }),
 );
 
-program.name("repobd").description("RepoBD CLI").version("0.0.0");
+program.name("repobd").description("RepoBD CLI").version(packageJson.version);
 
 program
   .command("send")

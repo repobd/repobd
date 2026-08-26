@@ -14,12 +14,12 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 3 | CLI repository identity guard | COMPLETE |
 | 4 | Safe local apply | COMPLETE |
 | 5A | CLI sender, local development only | COMPLETE |
-| 5B | Production integration and real end-to-end | IMPLEMENTED — production E2E completed, pending final Review B / commit gate |
-| 6 | Release hardening | NOT STARTED |
+| 5B | Production integration and real end-to-end | COMPLETE |
+| 6 | Release readiness | IN PROGRESS — plan approved, Phase 6B implemented, pending Codex review / commit gate |
 
-Current committed HEAD: `4bf43fa382ff841e929edb00e91913fa2c04a404`,
-`chore: bind production D1 database`. Phase 5B closure documentation is
-uncommitted work in progress on top of it.
+Current committed HEAD: `ea51dfb401129b0c32797e2ea75cd5a056dca416`,
+`docs: close Phase 5B production integration`. Phase 6B is uncommitted work
+in progress on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -197,7 +197,7 @@ Fixed, as before:
 - the delivery link carries key and binding in the fragment only
 - no commit, push, deploy, package install, or arbitrary command execution
 
-## Phase 5B — Production integration and real end-to-end — IMPLEMENTED, production E2E completed
+## Phase 5B — Production integration and real end-to-end — COMPLETE
 
 Goal: stand up the minimum Cloudflare surface needed to prove one genuine
 external send → pull round trip.
@@ -292,21 +292,71 @@ matrix confirmed no plaintext synthetic value, decryption key, or
 repository-identity string ever appeared in server storage. Only synthetic
 test data was used throughout; no real credential was ever entered.
 
-## Phase 6 — Release hardening — NOT STARTED
+## Phase 6 — Release readiness — IN PROGRESS
 
-Goal: make v0.1 safe enough for external testing.
+Goal: make v0.1 safe and correctly packaged for an external developer to
+discover, install, understand, safely run, evaluate, and report a
+vulnerability in — without becoming a new-feature phase. Plan approved:
+MIT license, manual/2FA first npm publish, a narrow npm `files` allowlist
+with internal AI/governance docs staying public on GitHub, and
+`api.repobd.com` as the settled v0.1 production endpoint (established in
+Phase 6C, not yet live). Public mutations (GitHub visibility, npm publish,
+DNS) remain behind the separate Human Public Release Gate.
 
-Scope:
-- full negative/adversarial test pass
-- README quick start
-- SECURITY.md / responsible disclosure
-- threat-model wording checked for overclaiming
-- privacy/terms minimum needed for hosted service
-- abuse contact/process
-- npm package smoke test
-- demo/test repositories only; no production credentials
+**Phase 6B — local release artifact preparation — implemented,
+uncommitted, pending Codex review.**
 
-Public release remains a separate explicit decision.
+- `package.json`: `version: "0.1.0"`, `private` removed, description
+  reworded to describe only the CLI (not the Worker, which never ships in
+  this package), `license: "MIT"`, `repository`/`bugs`/`homepage`, and a
+  `"files": ["dist"]` allowlist. No `exports` field — RepoBD ships one CLI
+  binary, not an importable library. `package-lock.json` refreshed via
+  `npm install --package-lock-only`; the diff is exactly the version/
+  license fields, no dependency change.
+- `LICENSE`: MIT, copyright 2026 Shinya Sato — the repository's own
+  git-author identity, not an invented legal entity.
+- `SECURITY.md`: supported versions (0.1.x), no-public-issues guidance,
+  non-SLA response expectations, a `docs/THREAT_MODEL.md` /
+  `docs/SECURITY_INVARIANTS.md` pointer. States GitHub Private
+  Vulnerability Reporting is not yet available — the repository is still
+  private, and that feature requires public visibility — without
+  inventing an interim contact.
+- `README.md`: rewritten for an external reader — corrected status line
+  and phase table, one synthetic `send`/`pull` example, repository-
+  binding and `.env`-boundary sections, `api.repobd.com` named as the
+  intended v0.1 origin but explicitly not live yet, an install section
+  that labels `npx repobd` as post-publish and states `npm install repobd`
+  does not work today, and `SECURITY.md`/`LICENSE` pointers.
+- **Package boundary, verified twice** (dry-run and a real, unpublished
+  tarball independently inspected with `tar -tzf`): dropped from 105
+  files / 1.0 MB (the whole repository, including `src/worker/**`, every
+  internal governance file, and all three `wrangler*.jsonc` configs) to
+  **35 files / ~77 kB** — `LICENSE`, `README.md`, `package.json`, and
+  `dist/**` only.
+- **CLI version defect found and fixed within this cycle**:
+  `src/cli/index.ts` previously hardcoded `.version("0.0.0")`, so bumping
+  `package.json` alone left `repobd --version` reporting the old literal.
+  Fixed by reading `version` from `package.json` at the same relative
+  offset (`../../package.json` from the compiled/source file's own
+  location via `import.meta.url`) that resolves correctly both in the
+  source tree and in an installed npm package (npm always ships
+  `package.json` alongside whatever `files` lists) — package.json is now
+  the single authoritative version source, with no separate literal to
+  drift. `test/cli.smoke.test.ts` and `test/cli.diagnostics.test.ts` now
+  assert against that same `package.json` read instead of a duplicated
+  string. A real installed tarball, outside the source tree, confirms
+  `repobd --version` reports `0.1.0`.
+- Validation: 955/955 tests (unchanged count — two existing assertions
+  strengthened in place, no new test added), typecheck PASS, build PASS,
+  `git diff --check` clean.
+- No npm publish, no npm credential/token, no GitHub visibility change, no
+  `api.repobd.com` DNS/Cloudflare work — all Phase 6C/Human Public Release
+  Gate scope, not touched here.
+
+Phase 6C (real secret scanner, npm 2FA readiness, establishing
+`api.repobd.com`) and Phase 6D (the actual public release) remain fully
+separate, explicitly authorized stages. Public release itself remains a
+separate explicit decision.
 
 ## Development policy
 

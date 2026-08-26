@@ -2,19 +2,23 @@
 
 ## Current state
 
-Phases 0 through 5A are complete and committed. `repobd pull` and `repobd
-send` together run a local send → pull round trip. Phase 5B — production
-integration and a real end-to-end run — implemented and production E2E
-completed, pending final Review B / commit gate.
+Phases 0 through 5B are complete and committed. `repobd pull` and `repobd
+send` together run a local send → pull round trip, proven against real
+production infrastructure. Phase 6 — release readiness — is in progress:
+the Phase 6 plan is Human-approved, and Phase 6B (local release artifact
+preparation) is implemented, pending Codex review and the Phase 6B commit
+gate.
 
 - branch: `main`
-- current committed HEAD: `4bf43fa382ff841e929edb00e91913fa2c04a404`
-- commit: `chore: bind production D1 database`
-- Phase 5B: production D1 created and migrated, Worker deployed to
-  `workers.dev` with rate-limit guardrails active, and a real synthetic
+- current committed HEAD: `ea51dfb401129b0c32797e2ea75cd5a056dca416`
+- commit: `docs: close Phase 5B production integration`
+- Phase 5B: COMPLETE. Production D1 created and migrated, Worker deployed
+  to `workers.dev` with rate-limit guardrails active, and a real synthetic
   end-to-end matrix run against that production environment (Human Gates
-  A, B, and C). Closure documentation (this update) is uncommitted, pending
-  Codex Review B.
+  A, B, and C). Closure documentation reviewed at Codex Review B (blocker
+  0 / major 0 / minor 0 / nit 0) and committed.
+- Phase 6B: local release-artifact preparation is implemented and
+  uncommitted — see "Phase 6" below.
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -240,9 +244,10 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   create call; `src/cli/secret-client.ts` adds `create` and validates the
   configured origin; `src/cli/link.ts` owns the one origin policy the builder
   and parser share.
-- **Phase 5B — production integration and real end-to-end.** Implemented
-  and production E2E completed, pending final Review B / commit gate.
-  Phase 5B-1 (rate-limit enforcement + non-executable production D1 shape,
+- **Phase 5B — production integration and real end-to-end.** COMPLETE.
+  Closure documentation reviewed at Codex Review B (blocker 0 / major 0 /
+  minor 0 / nit 0) and committed at `ea51dfb`. Phase 5B-1 (rate-limit
+  enforcement + non-executable production D1 shape,
   reviewed at Codex Review A: blocker 0 / major 0 / minor 0 / nit 0) is
   committed across three distinct Wrangler configs, each with a different
   role:
@@ -272,27 +277,57 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   Account-wide production namespace uniqueness was confirmed before deploy
   (zero pre-existing Worker scripts on the target account). Human Gates A
   (D1 creation), B (migration + rate-limit activation + deploy + health),
-  and C (real synthetic E2E matrix) are all complete. Codex Review B
-  (closure) is pending.
+  and C (real synthetic E2E matrix) are all complete, and Codex Review B
+  closed at blocker 0 / major 0 / minor 0 / nit 0.
+- **Phase 6 — release readiness.** IN PROGRESS. The Phase 6 audit plan is
+  Human-approved: MIT license, manual/2FA first npm publish, a narrow npm
+  `files` allowlist, and `api.repobd.com` as the v0.1 production endpoint
+  (established in Phase 6C, not yet live) are all settled decisions.
+  **Phase 6B — local release artifact preparation — implemented,
+  uncommitted, pending Codex review.** `package.json` now carries
+  `version: "0.1.0"`, no `private`, a CLI-only `description`, `license`,
+  `repository`/`bugs`/`homepage`, and a `"files": ["dist"]` allowlist; a
+  real (unpublished) `npm pack` confirms the package boundary dropped from
+  105 files/1.0 MB (the whole repository) to 35 files/76.8 kB — `LICENSE`,
+  `README.md`, `package.json`, and `dist/**` only, independently verified
+  against the raw tarball. `LICENSE` (MIT, copyright 2026 Shinya Sato —
+  the repository's own git-author identity) and `SECURITY.md` (states
+  GitHub Private Vulnerability Reporting is not yet available, since the
+  repository is still private, without inventing a contact) are new.
+  `README.md` is rewritten for an external reader: corrected status, one
+  synthetic example, the `api.repobd.com` origin named as pending, and no
+  claim that npm publication has happened. `src/cli/index.ts` no longer
+  hardcodes its reported version — it reads `version` from `package.json`
+  at the same relative path in both the source tree and an installed npm
+  package, so `repobd --version` cannot drift from the package version
+  again; `test/cli.smoke.test.ts` and `test/cli.diagnostics.test.ts` now
+  assert against that same `package.json` read rather than a duplicated
+  literal. A real installed tarball (outside the source tree) confirms
+  `repobd --version` reports `0.1.0`. No npm publish, no GitHub visibility
+  change, no `api.repobd.com` DNS/Cloudflare work — that is Phase 6C.
 
 Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 5B closure documentation is uncommitted.** Production E2E is
-  complete and this update reflects it, but it has not yet passed Codex
-  Review B or the Phase 5B commit/closure gate.
+- **Phase 6B is implemented but not yet reviewed.** Release-artifact
+  changes (`package.json`, `LICENSE`, `SECURITY.md`, `README.md`,
+  `src/cli/index.ts`'s version fix, and the two version tests) are locally
+  validated but have not passed Codex review or the Phase 6B commit gate.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
-- **Release documentation is not written.** The v0.1 boundaries — one
-  `KEY=value` per delivery, the conservative `.env` subset, and the absence of
-  a shell-`source` guarantee — are now stated in `README.md` and
-  `docs/MVP_REQUIREMENTS.md`, and are recorded as marked release requirements in
-  the module headers of `src/apply/payload.ts`, `env-file.ts` and `target.ts`.
-  What is still missing is the material a release would need beyond that:
-  `SECURITY.md` and a disclosure process, an install and quick-start path, and
-  privacy/terms for a hosted service. The repository is private and nothing is
+- **Release documentation — largely addressed by Phase 6B, still
+  uncommitted.** The v0.1 boundaries — one `KEY=value` per delivery, the
+  conservative `.env` subset, and the absence of a shell-`source`
+  guarantee — are stated in `README.md` and `docs/MVP_REQUIREMENTS.md`,
+  and are recorded as marked release requirements in the module headers of
+  `src/apply/payload.ts`, `env-file.ts` and `target.ts`. `SECURITY.md` and
+  a `README.md` install/quick-start pass now exist locally as part of
+  Phase 6B (see "Phase 6" above) but are not yet committed. Still missing:
+  privacy/terms for the hosted service, and an actual disclosure process
+  beyond what `SECURITY.md` currently states (private reporting opens once
+  the repository is public). The repository is private and nothing is
   published, so none of it is on a deadline.
 - **`cli.smoke.test.ts` is load-sensitive.** Both of its cases spawn
   `npx tsx src/cli/index.ts` with no per-test timeout, against vitest's 5s
@@ -321,15 +356,17 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Send the Phase 5B closure working tree (documentation only — no product
-   code changed during Gate C) to Codex for Review B: infrastructure
-   evidence, real E2E evidence, security boundaries, documentation
-   accuracy, and repository state.
-2. Human closure gate: decide whether to commit the Phase 5B closure
-   documentation.
-3. Only then consider Phase 6 — release hardening remains a fully separate,
-   explicitly authorized decision.
+1. Send the Phase 6B working tree to Codex for review: package metadata/
+   boundary correctness, the version-fix mechanism, install-smoke
+   evidence, and LICENSE/SECURITY.md/README accuracy.
+2. Human commit gate: decide whether to commit the Phase 6B release
+   artifacts.
+3. Phase 6C (real secret scanner, npm 2FA readiness, establishing
+   `api.repobd.com`) and the Human Public Release Gate (GitHub visibility,
+   GitHub Private Vulnerability Reporting, first `npm publish`, tag/
+   release) each remain separately, explicitly authorized steps — not
+   implied by this cycle.
 
-Production Cloudflare resource creation, deployment and npm publication all
-still require explicit user approval; Phase 6 (npm publish, public GitHub
-visibility, custom domain) has not been authorized.
+Production Cloudflare resource creation, deployment, DNS changes, and npm
+publication all still require explicit user approval; no part of Phase 6C
+or the Public Release Gate has been authorized yet.
