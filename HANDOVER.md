@@ -2,17 +2,19 @@
 
 ## Current state
 
-Phases 0 through 6C-2-A are complete and committed. `repobd pull` and
-`repobd send` together run a local send → pull round trip, proven against
-real production infrastructure. Phase 6 — release readiness — is in
-progress: the Phase 6 plan is Human-approved, Phase 6B (local release
-artifact preparation) and Phase 6C-2-A (production custom domain) are both
-committed, and Phase 6C-2-B (CLI default-origin change) is implemented and
-uncommitted.
+Phases 0 through 6C-2-B are complete and committed. `repobd pull` and
+`repobd send` together run a real send → pull round trip against
+production, using the committed release artifact's own default origin —
+proven end to end in Phase 6C-2-C. Phase 6 — release readiness — is in
+progress: the Phase 6 plan is Human-approved, Phase 6B, Phase 6C-2-A
+(production custom domain), and Phase 6C-2-B (CLI default-origin change)
+are all committed, and Phase 6C-2-C (real synthetic validation) is
+complete pending its own closure documentation and final pre-public Codex
+review.
 
 - branch: `main`
-- current committed HEAD: `80a596e0ed947d038ee0b364fb3292b7b1c3a114`
-- commit: `chore: add stable production service domain`
+- current committed HEAD: `6f7fb607441371bb7cfed19783323051f986b466`
+- commit: `feat: use stable production service origin`
 - Phase 5B: COMPLETE. Production D1 created and migrated, Worker deployed
   to `workers.dev` with rate-limit guardrails active, and a real synthetic
   end-to-end matrix run against that production environment (Human Gates
@@ -29,7 +31,15 @@ uncommitted.
   Worker as a Wrangler Custom Domain; `workers.dev` deliberately kept
   live as a fallback (`workers_dev: true`), Preview URLs explicitly
   disabled (`preview_urls: false`). Both endpoints healthy.
-- Phase 6C-2-B: implemented, uncommitted — see "Phase 6" below.
+- Phase 6C-2-B: COMPLETE. `DEFAULT_SERVER_ORIGIN` is `https://api.repobd.com`;
+  `REPOBD_SERVER_URL` remains the explicit override. Reviewed and
+  committed.
+- Phase 6C-2-C: COMPLETE (validation only, no repository change from the
+  E2E itself). Real synthetic send/pull/consume round trip run from the
+  actual installed npm tarball (not the source tree), with
+  `REPOBD_SERVER_URL` explicitly unset — proved the committed default
+  really does reach `https://api.repobd.com` in production. See "Phase 6"
+  below for the full evidence.
 
 Repository:
 - GitHub: `repobd/repobd` (private during MVP development)
@@ -336,30 +346,58 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   proceeding, and redeployed; both `https://api.repobd.com/health` and
   `https://repobd-worker.shinya-bj.workers.dev/health` now return
   `200 ok`.
-  **Phase 6C-2-B — CLI default-origin change — implemented, uncommitted.**
-  `DEFAULT_SERVER_ORIGIN` in `src/cli/secret-client.ts` changed from
-  `http://localhost:8787` to `https://api.repobd.com`; `REPOBD_SERVER_URL`
-  remains the explicit override for local development (including the
-  loopback-HTTP exception), with no change to `checkOriginPolicy`/
-  `parseServiceOrigin`, repo-guard ordering, crypto, or lifecycle
-  semantics. `README.md` now describes `api.repobd.com` as the live
-  default, with `REPOBD_SERVER_URL` framed as an advanced override, not a
-  requirement. Real default-origin production E2E (send/pull against the
-  new default with no override set) is Phase 6C-2-C, not yet run. No npm
-  publish, no GitHub visibility change.
+  **Phase 6C-2-B — CLI default-origin change — COMPLETE**, reviewed and
+  committed. `DEFAULT_SERVER_ORIGIN` in `src/cli/secret-client.ts` changed
+  from `http://localhost:8787` to `https://api.repobd.com`;
+  `REPOBD_SERVER_URL` remains the explicit override for local development
+  (including the loopback-HTTP exception), with no change to
+  `checkOriginPolicy`/`parseServiceOrigin`, repo-guard ordering, crypto,
+  or lifecycle semantics. `README.md` describes `api.repobd.com` as the
+  live default, with `REPOBD_SERVER_URL` framed as an advanced override,
+  not a requirement.
+
+  **Phase 6C-2-C — real synthetic validation — COMPLETE (validation only).**
+  Built a real, unpublished `npm pack` tarball and installed it in an
+  isolated directory outside the repository — the actual committed
+  release artifact, not the source tree — confirmed `--version` reports
+  `0.1.0` and `REPOBD_SERVER_URL` was explicitly unset throughout. From
+  that installed CLI, against two local git fixtures with distinct
+  GitHub-shaped origins (`test-alpha`, `test-beta`), with a synthetic
+  `REPOBD_ORIGIN_E2E=TEST_API_REPOBD_COM_2026_<random>` value:
+  - **Default-origin proof:** `send` succeeded with no origin
+    configuration; the printed delivery link's origin was
+    `https://api.repobd.com` — direct evidence the committed default
+    reaches production, not an assumption.
+  - **Wrong-repository block:** `pull` from `test-beta` was rejected
+    ("Repository mismatch") before any claim; read-only D1 confirmed the
+    row stayed `available`, `claim_id: null`.
+  - **Correct round trip:** `pull` from `test-alpha` succeeded — repo
+    verified, decrypted, exact synthetic value written to `.env`,
+    `Delivery consumed.`; D1 reached `consumed`.
+  - **One-time behavior:** a second `pull` from `test-alpha` on the same
+    delivery was rejected ("already been used"), `.env` hash and D1
+    `consumed_at` both unchanged — no second write.
+  - **Privacy boundary:** the envelope column is opaque AES-GCM
+    ciphertext; a scan across all 26 production rows for the synthetic
+    value, the fixture repo identities, and the payload key name found
+    zero matches.
+  - **Coexistence:** both `https://api.repobd.com/health` and
+    `https://repobd-worker.shinya-bj.workers.dev/health` returned
+    `200 ok` before and after the matrix; no rate-limit rejection was
+    encountered on this normal-volume traffic.
+  All fixtures, the tarball, the installed package, and the captured
+  delivery link were removed afterward; this repository's own working
+  tree was never touched by the E2E itself (only this documentation
+  update is a repository change). No real credential was used.
 
 Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 6C-2-B is implemented but not yet reviewed.** The CLI
-  default-origin change (`src/cli/secret-client.ts`,
-  `test/cli.secret-client.test.ts`, a wording fix in
-  `test/cli.send.test.ts`, `README.md`) is locally validated but has not
-  passed Codex review or the Phase 6C-2-B commit gate.
-- **Real default-origin production E2E is still pending — Phase 6C-2-C.**
-  A synthetic send/pull round trip against `https://api.repobd.com` with
-  no `REPOBD_SERVER_URL` override set has not yet been run.
+- **Phase 6C-2-C closure documentation (this update) is uncommitted,
+  pending the final pre-public Codex review.** The E2E evidence itself is
+  real and complete (see "Phase 6" above); only this documentation
+  update remains to be reviewed and committed.
 - **npm account 2FA readiness is an unverified Human prerequisite.** No
   npm session is authenticated in the development environment; this
   cannot be checked without one, and none has been created.
@@ -406,16 +444,16 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Send the Phase 6C-2-B working tree to Codex for review: default-origin
-   implementation, origin-policy regression check, docs accuracy, and
-   package/tarball evidence.
-2. Human commit gate: decide whether to commit the Phase 6C-2-B change.
-3. Phase 6C-2-C (real synthetic send/pull against the live default
-   origin) and the Human Public Release Gate (GitHub visibility, GitHub
-   Private Vulnerability Reporting, first `npm publish`, tag/release)
-   each remain separately, explicitly authorized steps — not implied by
-   this cycle.
+1. Send this Phase 6C-2-C closure working tree to Codex for the final
+   pre-public review: production-origin state, installed-artifact E2E
+   evidence, security/publication readiness, and any remaining BLOCKER
+   before the Human Public Release Gate.
+2. Human commit gate: decide whether to commit the Phase 6C-2-C closure
+   documentation.
+3. The Human Public Release Gate (GitHub visibility, GitHub Private
+   Vulnerability Reporting, first `npm publish`, tag/release) remains a
+   separate, explicitly authorized step — not implied by this cycle.
 
 Production Cloudflare resource creation, deployment, DNS changes, and npm
-publication all still require explicit user approval; no part of Phase
-6C-2-C or the Public Release Gate has been authorized yet.
+publication all still require explicit user approval; no part of the
+Public Release Gate has been authorized yet.

@@ -15,11 +15,11 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 4 | Safe local apply | COMPLETE |
 | 5A | CLI sender, local development only | COMPLETE |
 | 5B | Production integration and real end-to-end | COMPLETE |
-| 6 | Release readiness | IN PROGRESS — 6B and 6C-2-A committed, 6C-2-B implemented pending Codex review / commit gate |
+| 6 | Release readiness | IN PROGRESS — 6B/6C-1/6C-2-A/6C-2-B committed, 6C-2-C E2E complete pending final pre-public Codex review / commit gate |
 
-Current committed HEAD: `80a596e0ed947d038ee0b364fb3292b7b1c3a114`,
-`chore: add stable production service domain`. Phase 6C-2-B is uncommitted
-work in progress on top of it.
+Current committed HEAD: `6f7fb607441371bb7cfed19783323051f986b466`,
+`feat: use stable production service origin`. Phase 6C-2-C closure
+documentation is uncommitted work in progress on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -382,33 +382,53 @@ explicit fields, and redeployed within the same Gate; both
 `https://repobd-worker.shinya-bj.workers.dev/health` now return
 `200 ok`. No D1/rate-limit/CLI/doc change in this slice.
 
-**Phase 6C-2-B — CLI default-origin change — implemented, uncommitted,
-pending Codex review.** `DEFAULT_SERVER_ORIGIN` in
-`src/cli/secret-client.ts` changed from `http://localhost:8787` to
-`https://api.repobd.com`, with its doc comment updated to match.
-`REPOBD_SERVER_URL` remains the explicit override; `checkOriginPolicy`/
-`parseServiceOrigin` in `src/cli/link.ts` are unchanged — HTTPS
-enforcement, the loopback-HTTP exception, and credentials/path/query/
-fragment rejection all still apply exactly as before, confirmed by the
-existing test suite (201 tests across `cli.secret-client.test.ts`,
-`cli.send.test.ts`, `cli.link.test.ts`, all passing unmodified in
-substance). Two tests updated for the new literal:
+**Phase 6C-2-B — CLI default-origin change — COMPLETE**, reviewed and
+committed. `DEFAULT_SERVER_ORIGIN` in `src/cli/secret-client.ts` changed
+from `http://localhost:8787` to `https://api.repobd.com`, with its doc
+comment updated to match. `REPOBD_SERVER_URL` remains the explicit
+override; `checkOriginPolicy`/`parseServiceOrigin` in `src/cli/link.ts`
+are unchanged — HTTPS enforcement, the loopback-HTTP exception, and
+credentials/path/query/fragment rejection all still apply exactly as
+before, confirmed by the existing test suite (201 tests across
+`cli.secret-client.test.ts`, `cli.send.test.ts`, `cli.link.test.ts`, all
+passing unmodified in substance). Two tests updated for the new literal:
 `test/cli.secret-client.test.ts`'s direct
 `expect(DEFAULT_SERVER_ORIGIN).toBe(...)` assertion, and a name/comment
-fix in `test/cli.send.test.ts` (the "falls back to local development"
-test no longer falls back to anything local). `README.md`'s service-origin
-section now describes `api.repobd.com` as the live default, with
-`REPOBD_SERVER_URL` framed as an advanced override rather than a
-requirement. `resolveServerOrigin()` verified directly: no override →
-`https://api.repobd.com`; with override → the override value. No trust-
-model change — confirmed by inspection, not assumed. Real default-origin
-production E2E (send/pull with no override set) is Phase 6C-2-C, not run
-here.
+fix in `test/cli.send.test.ts`. `README.md`'s service-origin section
+describes `api.repobd.com` as the live default, with `REPOBD_SERVER_URL`
+framed as an advanced override rather than a requirement. No trust-model
+change — confirmed by inspection, not assumed.
 
-Phase 6C-2-C (real synthetic validation against the live default origin)
-and Phase 6D (the actual public release) remain fully separate,
-explicitly authorized stages. Public release itself remains a separate
-explicit decision.
+**Phase 6C-2-C — real synthetic validation — COMPLETE.** Built a real
+`npm pack` tarball of the committed release artifact and installed it in
+an isolated directory outside the repository — deliberately not the
+source-tree CLI — with `REPOBD_SERVER_URL` confirmed unset throughout.
+Against two local git fixtures with distinct GitHub-shaped origins and a
+synthetic `REPOBD_ORIGIN_E2E=TEST_API_REPOBD_COM_2026_<random>` payload:
+
+- `send` with no origin configuration produced a delivery link whose
+  origin was `https://api.repobd.com` — direct proof the installed
+  artifact's default reaches production, not an inference from source.
+- A wrong-repository `pull` was rejected before any claim; the D1 row
+  stayed `available`, confirmed read-only.
+- The correct-repository `pull` succeeded — decrypted, exact value
+  written to `.env`, delivery consumed; D1 reached `consumed`.
+- A replay `pull` on the same delivery was rejected as already used, with
+  `.env` and D1 `consumed_at` both unchanged — no second write.
+- Read-only inspection of the envelope column, and a scan across all
+  production rows for the synthetic value, the fixture repo identities,
+  and the payload key name, found nothing — opaque ciphertext only.
+- Both `https://api.repobd.com/health` and
+  `https://repobd-worker.shinya-bj.workers.dev/health` remained `200 ok`
+  throughout; no rate-limit rejection occurred on this normal traffic.
+
+All fixtures, the tarball, and the captured delivery link were removed
+afterward. This repository's working tree was untouched by the E2E
+itself — only this closure documentation is a repository change. No real
+credential was used at any point.
+
+Phase 6D (the actual public release) remains a fully separate, explicitly
+authorized stage behind the Human Public Release Gate.
 
 ## Development policy
 
