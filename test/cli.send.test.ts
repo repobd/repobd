@@ -650,6 +650,29 @@ describe("the secret prompt", () => {
     ).resolves.toEqual({ key: KEY_NAME, value: ` ${SECRET} ` });
   });
 
+  it.each([
+    ["a leading ASCII space", ` ${KEY_NAME}`],
+    ["a trailing ASCII space", `${KEY_NAME} `],
+    ["ASCII spaces on both sides", ` ${KEY_NAME} `],
+    ["a leading U+3000 ideographic space", `　${KEY_NAME}`],
+    ["a trailing U+3000 ideographic space", `${KEY_NAME}　`],
+    ["U+3000 on both sides", `　${KEY_NAME}　`],
+  ] as const)(
+    "trims %s from the key to exactly the variable name",
+    async (_label, typedKey) => {
+      // `key.trim()` in prompt.ts is JavaScript's native `String.prototype
+      // .trim()`, which strips every Unicode space separator it recognizes —
+      // not only ASCII space — so a full-width-padded key normalizes exactly
+      // like an ASCII-padded one. This is the interactive `send` path only;
+      // the same padding reaching `validateAssignment` directly (as it does
+      // via a payload string on the `pull` side) is rejected instead — see
+      // `apply.payload.test.ts`'s key-grammar cases.
+      await expect(
+        promptForSecret(piped(`${typedKey}\n${SECRET}\n`)),
+      ).resolves.toEqual({ key: KEY_NAME, value: SECRET });
+    },
+  );
+
   it("yields empty input rather than hanging when the stream ends early", async () => {
     await expect(promptForSecret(piped(`${KEY_NAME}\n`))).resolves.toEqual({
       key: KEY_NAME,

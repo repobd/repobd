@@ -168,6 +168,15 @@ describe("parseApplyPayload — key grammar", () => {
     expectFailure("API KEY=abc", "invalid-key");
   });
 
+  it("rejects a U+3000 ideographic space inside the key", () => {
+    // The interactive prompt's `.trim()` only ever strips the *edges* of
+    // what a sender typed — including full-width space, since JS `trim()`
+    // treats every Unicode space separator the same as ASCII space. An
+    // *internal* full-width space is untouched by that trim either way, and
+    // must fail the same grammar an internal ASCII space does.
+    expectFailure("MY　TEST_KEY=abc", "invalid-key");
+  });
+
   it("rejects leading whitespace before the key", () => {
     expectFailure(" API_KEY=abc", "invalid-key");
   });
@@ -237,6 +246,18 @@ describe("parseApplyPayload — value grammar", () => {
 
   it("rejects non-ASCII", () => {
     expectFailure("API_KEY=café", "unsupported-value");
+  });
+
+  it.each([
+    ["a leading U+3000 ideographic space", "API_KEY=　hello-repobd"],
+    ["a trailing U+3000 ideographic space", "API_KEY=hello-repobd　"],
+    ["U+3000 on both sides", "API_KEY=　hello-repobd　"],
+    ["an internal U+3000 ideographic space", "API_KEY=hello　repobd"],
+  ] as const)("rejects %s in the value, unrepaired", (_label, payload) => {
+    // Value is never trimmed or normalized at any layer — a full-width space
+    // is just one more non-ASCII character `VALUE_PRINTABLE_ASCII` excludes,
+    // the same as any other. Nothing here quietly narrows it back to ASCII.
+    expectFailure(payload, "unsupported-value");
   });
 
   it("rejects a control character", () => {
