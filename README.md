@@ -133,17 +133,21 @@ what is explicitly out of scope.
 
 ## Service origin
 
-RepoBD's v0.1 public service is intended to run at `https://api.repobd.com`.
-That endpoint is not live yet — it will be activated as part of release
-preparation, before RepoBD is published. Once it is live, this will be the
-default the CLI talks to.
+Ordinary v0.1 usage needs no configuration: `send` and `pull` talk to
+RepoBD's public production service at `https://api.repobd.com` by default.
+Nothing has to be set for normal use.
 
-For local development today, the service origin comes from
-`REPOBD_SERVER_URL` when set, and otherwise defaults to a local-development
-Worker at `http://localhost:8787`. HTTPS is required, with one narrow
-exception: plain HTTP is accepted only for a loopback development origin
-(`localhost`, `127.0.0.1`, `[::1]`). There is no configuration file and no
-`--server` flag.
+`REPOBD_SERVER_URL` is an advanced override, for local development and
+testing against a different environment — for example:
+
+```bash
+REPOBD_SERVER_URL=http://localhost:8787 repobd send
+```
+
+HTTPS is required for any non-loopback origin, with one narrow exception:
+plain HTTP is accepted only for a loopback development origin (`localhost`,
+`127.0.0.1`, `[::1]`). There is no configuration file and no `--server`
+flag.
 
 ## Installation
 

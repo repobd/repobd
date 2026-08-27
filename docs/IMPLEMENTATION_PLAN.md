@@ -15,11 +15,11 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 4 | Safe local apply | COMPLETE |
 | 5A | CLI sender, local development only | COMPLETE |
 | 5B | Production integration and real end-to-end | COMPLETE |
-| 6 | Release readiness | IN PROGRESS — plan approved, Phase 6B implemented, pending Codex review / commit gate |
+| 6 | Release readiness | IN PROGRESS — 6B and 6C-2-A committed, 6C-2-B implemented pending Codex review / commit gate |
 
-Current committed HEAD: `ea51dfb401129b0c32797e2ea75cd5a056dca416`,
-`docs: close Phase 5B production integration`. Phase 6B is uncommitted work
-in progress on top of it.
+Current committed HEAD: `80a596e0ed947d038ee0b364fb3292b7b1c3a114`,
+`chore: add stable production service domain`. Phase 6C-2-B is uncommitted
+work in progress on top of it.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -299,12 +299,12 @@ discover, install, understand, safely run, evaluate, and report a
 vulnerability in — without becoming a new-feature phase. Plan approved:
 MIT license, manual/2FA first npm publish, a narrow npm `files` allowlist
 with internal AI/governance docs staying public on GitHub, and
-`api.repobd.com` as the settled v0.1 production endpoint (established in
-Phase 6C, not yet live). Public mutations (GitHub visibility, npm publish,
-DNS) remain behind the separate Human Public Release Gate.
+`api.repobd.com` as the settled v0.1 production endpoint. Public
+mutations (GitHub visibility, npm publish, DNS) remain behind the
+separate Human Public Release Gate.
 
-**Phase 6B — local release artifact preparation — implemented,
-uncommitted, pending Codex review.**
+**Phase 6B — local release artifact preparation — COMPLETE**, reviewed at
+Codex review (blocker 0 / major 0 / minor 0 / nit 0) and committed.
 
 - `package.json`: `version: "0.1.0"`, `private` removed, description
   reworded to describe only the CLI (not the Worker, which never ships in
@@ -323,10 +323,11 @@ uncommitted, pending Codex review.**
   inventing an interim contact.
 - `README.md`: rewritten for an external reader — corrected status line
   and phase table, one synthetic `send`/`pull` example, repository-
-  binding and `.env`-boundary sections, `api.repobd.com` named as the
-  intended v0.1 origin but explicitly not live yet, an install section
-  that labels `npx repobd` as post-publish and states `npm install repobd`
-  does not work today, and `SECURITY.md`/`LICENSE` pointers.
+  binding and `.env`-boundary sections, an install section that labels
+  `npx repobd` as post-publish and states `npm install repobd` does not
+  work today, and `SECURITY.md`/`LICENSE` pointers. (The service-origin
+  section was updated again in Phase 6C-2-B once `api.repobd.com` went
+  live.)
 - **Package boundary, verified twice** (dry-run and a real, unpublished
   tarball independently inspected with `tar -tzf`): dropped from 105
   files / 1.0 MB (the whole repository, including `src/worker/**`, every
@@ -350,13 +351,64 @@ uncommitted, pending Codex review.**
   strengthened in place, no new test added), typecheck PASS, build PASS,
   `git diff --check` clean.
 - No npm publish, no npm credential/token, no GitHub visibility change, no
-  `api.repobd.com` DNS/Cloudflare work — all Phase 6C/Human Public Release
-  Gate scope, not touched here.
+  `api.repobd.com` DNS/Cloudflare work — that was Phase 6C.
 
-Phase 6C (real secret scanner, npm 2FA readiness, establishing
-`api.repobd.com`) and Phase 6D (the actual public release) remain fully
-separate, explicitly authorized stages. Public release itself remains a
-separate explicit decision.
+**Phase 6C-1 — pre-public readiness audit — COMPLETE (read-only).** Real
+full-history secret scan with `gitleaks` (39 commits, all refs, and the
+working tree): no leaks found. `repobd.com` Cloudflare zone confirmed
+active and on the same account as the production Worker/D1
+(`d5fd0329fb19d3a7c24b728f9167cb23`); no conflicting DNS record for
+`api.repobd.com`. npm package name `repobd` still unregistered; no npm
+session authenticated in this environment, so 2FA readiness remains an
+unverified Human prerequisite, not a defect. GitHub repo confirmed
+private, zero Actions secrets, branch protection uninspectable while
+private (platform constraint, not a gap). Identified the Wrangler-native
+Worker Custom Domain (`routes: [{ pattern, custom_domain: true,
+zone_name }]`) as the correct mechanism, and — correcting the original
+Phase 6 plan's wording — confirmed attaching it requires an actual
+`wrangler deploy`, not a DNS-only action.
+
+**Phase 6C-2-A — production custom domain — COMPLETE.**
+`wrangler.production.jsonc` gained the `routes` entry for
+`api.repobd.com`, plus explicit `"workers_dev": true` and
+`"preview_urls": false`. The first deploy attempt, made without those two
+explicit fields, disabled `workers.dev` as a side effect — Wrangler's
+default for an *omitted* `workers_dev` turns out to be `false`, not
+`true`, once a `custom_domain` route exists, contradicting the Phase
+6C-1 source-reading (which held for a route-less config). Caught
+immediately via the required health check, corrected with the two
+explicit fields, and redeployed within the same Gate; both
+`https://api.repobd.com/health` and
+`https://repobd-worker.shinya-bj.workers.dev/health` now return
+`200 ok`. No D1/rate-limit/CLI/doc change in this slice.
+
+**Phase 6C-2-B — CLI default-origin change — implemented, uncommitted,
+pending Codex review.** `DEFAULT_SERVER_ORIGIN` in
+`src/cli/secret-client.ts` changed from `http://localhost:8787` to
+`https://api.repobd.com`, with its doc comment updated to match.
+`REPOBD_SERVER_URL` remains the explicit override; `checkOriginPolicy`/
+`parseServiceOrigin` in `src/cli/link.ts` are unchanged — HTTPS
+enforcement, the loopback-HTTP exception, and credentials/path/query/
+fragment rejection all still apply exactly as before, confirmed by the
+existing test suite (201 tests across `cli.secret-client.test.ts`,
+`cli.send.test.ts`, `cli.link.test.ts`, all passing unmodified in
+substance). Two tests updated for the new literal:
+`test/cli.secret-client.test.ts`'s direct
+`expect(DEFAULT_SERVER_ORIGIN).toBe(...)` assertion, and a name/comment
+fix in `test/cli.send.test.ts` (the "falls back to local development"
+test no longer falls back to anything local). `README.md`'s service-origin
+section now describes `api.repobd.com` as the live default, with
+`REPOBD_SERVER_URL` framed as an advanced override rather than a
+requirement. `resolveServerOrigin()` verified directly: no override →
+`https://api.repobd.com`; with override → the override value. No trust-
+model change — confirmed by inspection, not assumed. Real default-origin
+production E2E (send/pull with no override set) is Phase 6C-2-C, not run
+here.
+
+Phase 6C-2-C (real synthetic validation against the live default origin)
+and Phase 6D (the actual public release) remain fully separate,
+explicitly authorized stages. Public release itself remains a separate
+explicit decision.
 
 ## Development policy
 

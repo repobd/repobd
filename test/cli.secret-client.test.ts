@@ -180,12 +180,12 @@ describe("create transport", () => {
 });
 
 describe("server origin resolution", () => {
-  it("defaults to the local development Worker", () => {
+  it("defaults to the public production service", () => {
     expect(resolveServerOrigin({})).toEqual({
       ok: true,
       origin: DEFAULT_SERVER_ORIGIN,
     });
-    expect(DEFAULT_SERVER_ORIGIN).toBe("http://localhost:8787");
+    expect(DEFAULT_SERVER_ORIGIN).toBe("https://api.repobd.com");
   });
 
   it("uses the environment variable when it is set", () => {

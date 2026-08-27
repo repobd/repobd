@@ -515,12 +515,13 @@ describe("the server origin", () => {
     expect(run.svc.origins).toEqual([ORIGIN]);
   });
 
-  it("falls back to the local development Worker, and that link is pullable", async () => {
-    // The whole local-development flow, end to end, through the real parser:
-    // no `REPOBD_SERVER_URL`, so the default loopback origin is used, and the
-    // link `send` prints must be one `pull` will accept. A sender that could
+  it("falls back to the default production origin, and that link is pullable", async () => {
+    // The whole default-origin flow, end to end, through the real parser: no
+    // `REPOBD_SERVER_URL`, so `DEFAULT_SERVER_ORIGIN` is used, and the link
+    // `send` prints must be one `pull` will accept. A sender that could
     // report success holding a link the receiving side refuses is the bug this
-    // pins shut.
+    // pins shut. The transport is a service double either way — no network
+    // call reaches the real default origin here.
     delete process.env[SERVER_ORIGIN_ENV];
     const dir = await workspace();
     const svc = sender();

@@ -36,8 +36,15 @@ const REQUEST_TIMEOUT_MS = 15_000;
 /** Environment variable naming the RepoBD service this CLI talks to. */
 export const SERVER_ORIGIN_ENV = "REPOBD_SERVER_URL";
 
-/** Where a development Wrangler run serves the Worker. Loopback, so http. */
-export const DEFAULT_SERVER_ORIGIN = "http://localhost:8787";
+/**
+ * The default RepoBD service: the public v0.1 production origin, live at
+ * `api.repobd.com` since Phase 6C-2-A. An ordinary user runs `send`/`pull`
+ * against this without setting anything. `REPOBD_SERVER_URL` remains the
+ * explicit override for local development and testing — a loopback HTTP
+ * origin such as `http://localhost:8787`, where a local Wrangler run
+ * serves the Worker, is set through that override, not this default.
+ */
+export const DEFAULT_SERVER_ORIGIN = "https://api.repobd.com";
 
 export type ServerOriginResolution =
   | { readonly ok: true; readonly origin: string }
@@ -47,9 +54,8 @@ export type ServerOriginResolution =
  * The origin the CLI addresses its own requests to.
  *
  * Deliberately the smallest mechanism that works: one environment variable,
- * one local-development default, and no configuration file, flag, or lookup
- * order beyond those two. v0.1 has no deployed service, so there is nothing
- * else to select between yet.
+ * one default, and no configuration file, flag, or lookup order beyond
+ * those two.
  *
  * Whatever the environment supplies is validated by `parseServiceOrigin` — the
  * same policy the delivery-link builder and parser share — and returned
