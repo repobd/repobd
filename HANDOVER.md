@@ -2,19 +2,19 @@
 
 ## Current state
 
-Phases 0 through 6C-2-B are complete and committed. `repobd pull` and
-`repobd send` together run a real send → pull round trip against
-production, using the committed release artifact's own default origin —
-proven end to end in Phase 6C-2-C. Phase 6 — release readiness — is in
-progress: the Phase 6 plan is Human-approved, Phase 6B, Phase 6C-2-A
-(production custom domain), and Phase 6C-2-B (CLI default-origin change)
-are all committed, and Phase 6C-2-C (real synthetic validation) is
-complete pending its own closure documentation and final pre-public Codex
-review.
+Phase 6C is COMPLETE (including 6C-2-C closure and the superseding
+full-history secret scan), Phase 6D-0 (private manual release rehearsal)
+is COMPLETE, and whitespace-validation regression coverage is COMPLETE —
+all committed. Phase 6D-1 has EXECUTED the GitHub visibility/PVR
+transition: the repository is now PUBLIC and GitHub Private
+Vulnerability Reporting is ENABLED. Phase 6D-1's own documentation
+(this update) is currently being closed under Codex review. npm remains
+unpublished, no `v0.1.0` tag exists, no GitHub Release exists, and
+Phase 6D-2 / first npm publish has NOT started.
 
 - branch: `main`
-- current committed HEAD: `6f7fb607441371bb7cfed19783323051f986b466`
-- commit: `feat: use stable production service origin`
+- current committed HEAD: `f4ce160882af7d1206b2e2f09cb51adea38011f5`
+- commit: `test: cover whitespace validation edge cases`
 - Phase 5B: COMPLETE. Production D1 created and migrated, Worker deployed
   to `workers.dev` with rate-limit guardrails active, and a real synthetic
   end-to-end matrix run against that production environment (Human Gates
@@ -42,17 +42,20 @@ review.
   below for the full evidence.
 
 Repository:
-- GitHub: `repobd/repobd` (private during MVP development)
+- GitHub: `repobd/repobd` (public as of Phase 6D-1; was private during MVP
+  development)
 - Local path: `/Users/shinya/Desktop/repobd`
 - Domain: `repobd.com`
 - npm account: `repobd`
 - Email aliases: `hello@repobd.com`, `support@repobd.com`, `security@repobd.com`, `abuse@repobd.com`
 
 Production Cloudflare resources now exist for RepoBD (Phase 5B — see
-below); the repository is still private, and nothing is published to npm.
-This is production *integration*, not a public release: no public
-documentation, support process, or announced availability exists yet, and
-none is implied by this checkpoint.
+below). As of Phase 6D-1, the repository is public and GitHub Private
+Vulnerability Reporting is enabled; nothing is published to npm yet, and
+no `v0.1.0` tag or GitHub Release exists. This is production
+*integration*, not a public release: npm publication, tagging, and a
+GitHub Release remain separate, not-yet-authorized steps, and no
+announced availability exists yet.
 
 ### Production environment (Phase 5B, updated Phase 6C-2-A)
 
@@ -394,10 +397,14 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 6C-2-C closure documentation (this update) is uncommitted,
-  pending the final pre-public Codex review.** The E2E evidence itself is
-  real and complete (see "Phase 6" above); only this documentation
+- **Phase 6D-1 documentation checkpoint (this update) is uncommitted,
+  pending Human review.** GitHub visibility and Private Vulnerability
+  Reporting have already been changed under Phase 6D-1's own explicit
+  authorization (see "Current state" above); only this documentation
   update remains to be reviewed and committed.
+- **First `npm publish` and Phase 6D-2 have not started.** npm `repobd`
+  remains unpublished, no `v0.1.0` tag exists, and no GitHub Release
+  exists — each requires its own separate, explicit Human authorization.
 - **npm account 2FA readiness is an unverified Human prerequisite.** No
   npm session is authenticated in the development environment; this
   cannot be checked without one, and none has been created.
@@ -411,22 +418,20 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
   and are recorded as marked release requirements in the module headers of
   `src/apply/payload.ts`, `env-file.ts` and `target.ts`. `SECURITY.md` and
   a `README.md` install/quick-start pass are committed as of Phase 6B.
-  Still missing: privacy/terms for the hosted service, and an actual
-  disclosure process beyond what `SECURITY.md` currently states (private
-  reporting opens once the repository is public — Phase 6D). The
-  repository is private and nothing is published, so none of it is on a
-  deadline.
+  Still missing: privacy/terms for the hosted service. `SECURITY.md`
+  now points reporters at GitHub Private Vulnerability Reporting, which
+  is enabled as of Phase 6D-1. The repository is public, but nothing is
+  published to npm yet, so none of it is on a deadline.
 - **`cli.smoke.test.ts` is load-sensitive.** Both of its cases spawn
   `npx tsx src/cli/index.ts` with no per-test timeout, against vitest's 5s
   default. One local full-suite run has failed on it under load; it has not
   failed in CI. Phase 0 code, untouched since. Fixing it needs its own
   authorized cycle.
-- **Production infrastructure exists and now has a stable public origin,
-  but the repository/package are not yet public.** `repobd-production` D1
-  and the `repobd-worker` Worker are live at both `api.repobd.com` and
-  `workers.dev` (see "Phase status" above), but GitHub is still private
-  and nothing is on npm — see Phase 6 for what remains before that
-  decision.
+- **Production infrastructure exists and has a stable public origin, and
+  the GitHub repository is now public (Phase 6D-1).** `repobd-production`
+  D1 and the `repobd-worker` Worker are live at both `api.repobd.com` and
+  `workers.dev` (see "Phase status" above). The npm package is not yet
+  published — see Phase 6 for what remains before that decision.
 
 ## Development workflow
 
@@ -444,16 +449,12 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Send this Phase 6C-2-C closure working tree to Codex for the final
-   pre-public review: production-origin state, installed-artifact E2E
-   evidence, security/publication readiness, and any remaining BLOCKER
-   before the Human Public Release Gate.
-2. Human commit gate: decide whether to commit the Phase 6C-2-C closure
-   documentation.
-3. The Human Public Release Gate (GitHub visibility, GitHub Private
-   Vulnerability Reporting, first `npm publish`, tag/release) remains a
-   separate, explicitly authorized step — not implied by this cycle.
+1. Human commit gate: decide whether to commit this Phase 6D-1
+   documentation checkpoint (`HANDOVER.md`, `README.md`, `SECURITY.md`).
+2. First `npm publish` and any further Phase 6D-2 work remain a separate,
+   explicitly authorized Human Gate — not implied by this cycle.
 
-Production Cloudflare resource creation, deployment, DNS changes, and npm
-publication all still require explicit user approval; no part of the
-Public Release Gate has been authorized yet.
+GitHub visibility and GitHub Private Vulnerability Reporting have already
+been enabled under Phase 6D-1's own explicit authorization. npm
+publication, git tagging, and a GitHub Release still require their own
+explicit user approval; none of that has been authorized yet.

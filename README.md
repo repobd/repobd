@@ -6,7 +6,7 @@ RepoBD is a CLI-first developer security tool: a secret transport with a reposit
 
 Its goal is simple: make it easy to hand a secret to another developer, and hard to apply it in the wrong repository.
 
-**Status: v0.1 release candidate — pre-public release preparation.** The CLI, production Cloudflare infrastructure, and a real production end-to-end run are all complete and reviewed. RepoBD has not yet been published to npm and this repository is not yet public.
+**Status: v0.1 release candidate — pre-public release preparation.** The CLI, production Cloudflare infrastructure, and a real production end-to-end run are all complete and reviewed. RepoBD has not yet been published to npm.
 
 ## What RepoBD is
 

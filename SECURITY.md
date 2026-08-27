@@ -9,10 +9,11 @@ released. No earlier public release exists.
 
 Please do not disclose security vulnerabilities in public GitHub Issues.
 
-This repository is currently private, so GitHub's private vulnerability
-reporting is not yet available; it will be enabled once the repository
-becomes public. Until then, RepoBD has no established reporting channel for
-external reporters.
+Use GitHub Private Vulnerability Reporting instead: open the
+[Security tab](https://github.com/repobd/repobd/security) on this
+repository and select "Report a vulnerability". This submits the report
+privately, so it can be handled by the repository maintainers without
+public disclosure, and is the preferred reporting channel.
 
 When reporting, please do not include real credentials, secrets, delivery
 links, or decryption material — RepoBD's threat model assumes reports can
