@@ -6,7 +6,7 @@ RepoBD is a CLI-first developer security tool: a secret transport with a reposit
 
 Its goal is simple: make it easy to hand a secret to another developer, and hard to apply it in the wrong repository.
 
-**Status: v0.1 release candidate — pre-public release preparation.** The CLI, production Cloudflare infrastructure, and a real production end-to-end run are all complete and reviewed. RepoBD has not yet been published to npm.
+**Status: v0.1 release candidate.** The CLI, production Cloudflare infrastructure, and a real production end-to-end run are all complete and reviewed.
 
 ## What RepoBD is
 
@@ -155,23 +155,20 @@ flag.
 
 ## Installation
 
-RepoBD has not been published to npm yet. Once `0.1.0` is published, the
-intended install path is:
-
-```bash
-npx repobd
-```
-
-or a global install:
+The npm release can be installed with:
 
 ```bash
 npm install -g repobd
 repobd
 ```
 
-`npm install repobd` does not work from the registry today.
+or run without installing:
 
-To try RepoBD before then, clone this repository and see
+```bash
+npx repobd
+```
+
+To build and run from source instead, clone this repository and see
 [`AGENTS.md`](AGENTS.md) and [`docs/AI_WORKFLOW.md`](docs/AI_WORKFLOW.md)
 for the development setup.
 

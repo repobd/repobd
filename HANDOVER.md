@@ -4,17 +4,20 @@
 
 Phase 6C is COMPLETE (including 6C-2-C closure and the superseding
 full-history secret scan), Phase 6D-0 (private manual release rehearsal)
-is COMPLETE, and whitespace-validation regression coverage is COMPLETE —
-all committed. Phase 6D-1 has EXECUTED the GitHub visibility/PVR
-transition: the repository is now PUBLIC and GitHub Private
-Vulnerability Reporting is ENABLED. Phase 6D-1's own documentation
-(this update) is currently being closed under Codex review. npm remains
-unpublished, no `v0.1.0` tag exists, no GitHub Release exists, and
-Phase 6D-2 / first npm publish has NOT started.
+is COMPLETE, whitespace-validation regression coverage is COMPLETE, and
+Phase 6D-1 is COMPLETE — all committed. The repository is PUBLIC and
+GitHub Private Vulnerability Reporting is ENABLED. The npm account
+`repobd` is authenticated in the publishing environment with 2FA mode
+`auth-and-writes` verified. Phase 6D-2A (final npm pre-publish artifact
+alignment — this update) brings the public-facing package documentation
+in line with an imminent first publish. `repobd@0.1.0` remains
+unpublished at this exact checkpoint, no `v0.1.0` tag exists, and no
+GitHub Release exists; the first `npm publish` is a separate,
+not-yet-authorized Human Gate.
 
 - branch: `main`
-- current committed HEAD: `f4ce160882af7d1206b2e2f09cb51adea38011f5`
-- commit: `test: cover whitespace validation edge cases`
+- current committed HEAD: `331390b20ecf7c0e824d9c99c2b390f045df7c0f`
+- commit: `docs: align public release security status`
 - Phase 5B: COMPLETE. Production D1 created and migrated, Worker deployed
   to `workers.dev` with rate-limit guardrails active, and a real synthetic
   end-to-end matrix run against that production environment (Human Gates
@@ -397,17 +400,17 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 6D-1 documentation checkpoint (this update) is uncommitted,
-  pending Human review.** GitHub visibility and Private Vulnerability
-  Reporting have already been changed under Phase 6D-1's own explicit
-  authorization (see "Current state" above); only this documentation
-  update remains to be reviewed and committed.
-- **First `npm publish` and Phase 6D-2 have not started.** npm `repobd`
-  remains unpublished, no `v0.1.0` tag exists, and no GitHub Release
-  exists — each requires its own separate, explicit Human authorization.
-- **npm account 2FA readiness is an unverified Human prerequisite.** No
-  npm session is authenticated in the development environment; this
-  cannot be checked without one, and none has been created.
+- **Phase 6D-2A documentation checkpoint (this update) is uncommitted,
+  pending Human review.** It aligns the public-facing README and this
+  file's live state with an imminent first npm publish; only this
+  documentation update remains to be reviewed and committed.
+- **First `npm publish` has not started.** npm `repobd` remains
+  unpublished, no `v0.1.0` tag exists, and no GitHub Release exists — the
+  actual publish is a separate, explicit Human authorization.
+- **npm account authenticated, 2FA verified.** The `repobd` npm account
+  is authenticated in the publishing environment with 2FA mode
+  `auth-and-writes` confirmed, satisfying the settled manual/2FA
+  first-publish prerequisite.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
@@ -449,10 +452,10 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Human commit gate: decide whether to commit this Phase 6D-1
-   documentation checkpoint (`HANDOVER.md`, `README.md`, `SECURITY.md`).
-2. First `npm publish` and any further Phase 6D-2 work remain a separate,
-   explicitly authorized Human Gate — not implied by this cycle.
+1. Human commit gate: decide whether to commit this Phase 6D-2A
+   documentation checkpoint (`HANDOVER.md`, `README.md`).
+2. First `npm publish` remains a separate, explicitly authorized Human
+   Gate — not implied by this cycle.
 
 GitHub visibility and GitHub Private Vulnerability Reporting have already
 been enabled under Phase 6D-1's own explicit authorization. npm
