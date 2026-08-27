@@ -78,6 +78,7 @@ $ cd my-service            # the repository the secret belongs to
 $ repobd send
 Secret name (KEY): DEMO_TOKEN
 Secret value: TEST_VALUE
+Delivery created. It can be used once, in that repository, within 15 minutes.
 https://api.repobd.com/d/<id>#k=<key>&b=<binding>
 ```
 
@@ -86,6 +87,7 @@ $ cd my-service            # the same repository, on the receiving side
 $ repobd pull
 Paste RepoBD link: https://api.repobd.com/d/<id>#k=<key>&b=<binding>
 Repository verified: github.com/you/my-service
+Will add DEMO_TOKEN to .env.
 Applied DEMO_TOKEN to .env.
 Delivery consumed.
 ```
@@ -97,6 +99,8 @@ $ cd some-other-repo
 $ repobd pull
 Paste RepoBD link: https://api.repobd.com/d/<id>#k=<key>&b=<binding>
 Repository mismatch. Secret was not retrieved.
+  bound to: github.com/you/my-service
+  current:  github.com/you/some-other-repo
 ```
 
 ## Repository binding
