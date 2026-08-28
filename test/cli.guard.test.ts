@@ -614,7 +614,9 @@ describe("the delivery link never travels in argv", () => {
       ],
       { encoding: "utf8" },
     );
-    expect(help).toContain("prompts for the delivery link");
+    expect(help).toContain(
+      "Retrieve and apply a delivery only if this repository matches",
+    );
   });
 
   it("does not expose the link as a command-line argument", async () => {

@@ -173,15 +173,39 @@ describe("ordinary diagnostics stay useful", () => {
     const result = runCli("--help");
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Usage: repobd");
+    expect(result.stdout).toContain("Repo-bound secret transport.");
+    expect(result.stdout).toContain("Wrong repo. No secret.");
     expect(result.stdout).toContain("send");
     expect(result.stdout).toContain("pull");
     expect(result.stdout).not.toContain(REDACTED);
   });
 
-  it("prints pull help describing the prompt", () => {
+  it("warns that the delivery link is secret-bearing", () => {
+    const result = runCli("--help");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("private, trusted channel");
+    expect(result.stdout).not.toContain(REDACTED);
+  });
+
+  it("prints send help describing the KEY/VALUE prompts", () => {
+    const result = runCli("send", "--help");
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain(
+      "Create a one-time secret delivery bound to this repository",
+    );
+    expect(result.stdout).toContain("origin");
+    expect(result.stdout).toContain("KEY");
+    expect(result.stdout).toContain("VALUE");
+    expect(result.stdout).not.toContain(REDACTED);
+  });
+
+  it("prints pull help describing repository-mismatch rejection", () => {
     const result = runCli("pull", "--help");
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("prompts for the delivery link");
+    expect(result.stdout).toContain(
+      "Retrieve and apply a delivery only if this repository matches",
+    );
+    expect(result.stdout).toContain("rejected before secret retrieval");
     expect(result.stdout).not.toContain(REDACTED);
   });
 

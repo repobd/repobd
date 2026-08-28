@@ -56,12 +56,43 @@ program.configureOutput(
   }),
 );
 
-program.name("repobd").description("RepoBD CLI").version(packageJson.version);
+program
+  .name("repobd")
+  .description("Repo-bound secret transport.\n\nWrong repo. No secret.")
+  .version(packageJson.version)
+  .addHelpText(
+    "after",
+    `
+Examples:
+  repobd send
+  repobd pull
+
+How it works:
+  1. Run \`repobd send\` in the intended repository.
+  2. Enter one KEY and VALUE.
+  3. Share the generated delivery link through a private, trusted channel
+     — it is secret-bearing.
+  4. Run \`repobd pull\` in the receiving repository.
+  5. RepoBD applies it only when the repository identity matches.
+
+More:
+  https://github.com/repobd/repobd`,
+  );
 
 program
   .command("send")
   .description(
-    "Create a delivery bound to this repository (prompts for the secret)",
+    "Create a one-time secret delivery bound to this repository",
+  )
+  .addHelpText(
+    "after",
+    `
+RepoBD derives repository identity from the current repository's origin
+remote.
+
+You will be prompted for:
+  KEY
+  VALUE`,
   )
   .action(async () => {
     const code = await runSend({
@@ -78,7 +109,15 @@ program
 program
   .command("pull")
   .description(
-    "Retrieve a secret bound to this repository (prompts for the delivery link)",
+    "Retrieve and apply a delivery only if this repository matches",
+  )
+  .addHelpText(
+    "after",
+    `
+The delivery is rejected before secret retrieval if the repository
+identity does not match.
+
+On success, the value is applied to this repository's root .env file.`,
   )
   .action(async () => {
     const code = await runPull({
