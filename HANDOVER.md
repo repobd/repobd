@@ -4,16 +4,21 @@
 
 Phase 6C is COMPLETE (including 6C-2-C closure and the superseding
 full-history secret scan), Phase 6D-0 (private manual release rehearsal)
-is COMPLETE, whitespace-validation regression coverage is COMPLETE, and
-Phase 6D-1 is COMPLETE — all committed. The repository is PUBLIC and
-GitHub Private Vulnerability Reporting is ENABLED. The npm account
-`repobd` is authenticated in the publishing environment with 2FA mode
-`auth-and-writes` verified. Phase 6D-2A (final npm pre-publish artifact
-alignment — this update) brings the public-facing package documentation
-in line with an imminent first publish. `repobd@0.1.0` remains
-unpublished at this exact checkpoint, no `v0.1.0` tag exists, and no
-GitHub Release exists; the first `npm publish` is a separate,
-not-yet-authorized Human Gate.
+is COMPLETE, whitespace-validation regression coverage is COMPLETE,
+Phase 6D-1 is COMPLETE, Phase 6D-2A (final npm pre-publish artifact
+alignment) is COMPLETE, and Phase 6D-2B is COMPLETE — all committed. The
+repository is PUBLIC and GitHub Private Vulnerability Reporting is
+ENABLED. **`repobd@0.1.0` has been published to npm** — the `latest`
+dist-tag is `0.1.0`, a clean registry install (`npm install
+repobd@0.1.0`) and an independent `npx repobd@0.1.0 --version` both
+passed, and the installed package boundary was verified as exactly 35
+files (`LICENSE`, `README.md`, `package.json`, `dist/**` only), matching
+shasum `4d41d91cb8557f45cd46761f1516dd52aade6745` / integrity
+`sha512-t2mfLibWBDgAPn3g4Ba64QqBBXDUPOLGLDfalaf3DDwtKQF39gTi82JwYbCkeOvAVdXZErPoDoq1b+rtODDlUQ==`.
+No `v0.1.0` git tag exists yet, and no GitHub Release exists yet; both
+are a separate, not-yet-authorized Human Gate (Phase 6D-2C's own next
+action — this update prepares release-notes text but does not create
+either).
 
 - branch: `main`
 - current committed HEAD: `331390b20ecf7c0e824d9c99c2b390f045df7c0f`
@@ -53,12 +58,11 @@ Repository:
 - Email aliases: `hello@repobd.com`, `support@repobd.com`, `security@repobd.com`, `abuse@repobd.com`
 
 Production Cloudflare resources now exist for RepoBD (Phase 5B — see
-below). As of Phase 6D-1, the repository is public and GitHub Private
-Vulnerability Reporting is enabled; nothing is published to npm yet, and
-no `v0.1.0` tag or GitHub Release exists. This is production
-*integration*, not a public release: npm publication, tagging, and a
-GitHub Release remain separate, not-yet-authorized steps, and no
-announced availability exists yet.
+below). The repository is public and GitHub Private Vulnerability
+Reporting is enabled (Phase 6D-1). **`repobd@0.1.0` is published to
+npm** (Phase 6D-2B) — `latest` is `0.1.0`, and a public registry clean
+install has been verified. No `v0.1.0` git tag or GitHub Release exists
+yet; both remain separate, not-yet-authorized Human Gates.
 
 ### Production environment (Phase 5B, updated Phase 6C-2-A)
 
@@ -400,17 +404,13 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 6D-2A documentation checkpoint (this update) is uncommitted,
-  pending Human review.** It aligns the public-facing README and this
-  file's live state with an imminent first npm publish; only this
-  documentation update remains to be reviewed and committed.
-- **First `npm publish` has not started.** npm `repobd` remains
-  unpublished, no `v0.1.0` tag exists, and no GitHub Release exists — the
-  actual publish is a separate, explicit Human authorization.
-- **npm account authenticated, 2FA verified.** The `repobd` npm account
-  is authenticated in the publishing environment with 2FA mode
-  `auth-and-writes` confirmed, satisfying the settled manual/2FA
-  first-publish prerequisite.
+- **Phase 6D-2C documentation checkpoint (this update) is uncommitted,
+  pending Human review.** It records the successful `repobd@0.1.0` npm
+  publication and drafts `v0.1.0` release notes; only this documentation
+  update remains to be reviewed and committed.
+- **`v0.1.0` git tag and GitHub Release have not been created.** npm
+  `repobd@0.1.0` is published, but tagging and the GitHub Release remain
+  a separate, explicit Human authorization.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
@@ -423,18 +423,20 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
   a `README.md` install/quick-start pass are committed as of Phase 6B.
   Still missing: privacy/terms for the hosted service. `SECURITY.md`
   now points reporters at GitHub Private Vulnerability Reporting, which
-  is enabled as of Phase 6D-1. The repository is public, but nothing is
-  published to npm yet, so none of it is on a deadline.
+  is enabled as of Phase 6D-1. The repository is public and
+  `repobd@0.1.0` is published to npm, so this is no longer pre-public
+  prep — it is ongoing post-release documentation work, not on a fixed
+  deadline.
 - **`cli.smoke.test.ts` is load-sensitive.** Both of its cases spawn
   `npx tsx src/cli/index.ts` with no per-test timeout, against vitest's 5s
   default. One local full-suite run has failed on it under load; it has not
   failed in CI. Phase 0 code, untouched since. Fixing it needs its own
   authorized cycle.
-- **Production infrastructure exists and has a stable public origin, and
-  the GitHub repository is now public (Phase 6D-1).** `repobd-production`
-  D1 and the `repobd-worker` Worker are live at both `api.repobd.com` and
-  `workers.dev` (see "Phase status" above). The npm package is not yet
-  published — see Phase 6 for what remains before that decision.
+- **Production infrastructure, GitHub, and npm are all now public
+  (Phases 6D-1/6D-2A/6D-2B).** `repobd-production` D1 and the
+  `repobd-worker` Worker are live at both `api.repobd.com` and
+  `workers.dev` (see "Phase status" above); `repobd@0.1.0` is published
+  to npm. Only `v0.1.0` tagging and a GitHub Release remain.
 
 ## Development workflow
 
@@ -452,12 +454,45 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Human commit gate: decide whether to commit this Phase 6D-2A
-   documentation checkpoint (`HANDOVER.md`, `README.md`).
-2. First `npm publish` remains a separate, explicitly authorized Human
-   Gate — not implied by this cycle.
+1. Human commit gate: decide whether to commit this Phase 6D-2C
+   documentation checkpoint (`HANDOVER.md`).
+2. Creating the `v0.1.0` git tag and a GitHub Release remains a separate,
+   explicitly authorized Human Gate — not implied by this cycle.
 
-GitHub visibility and GitHub Private Vulnerability Reporting have already
-been enabled under Phase 6D-1's own explicit authorization. npm
-publication, git tagging, and a GitHub Release still require their own
-explicit user approval; none of that has been authorized yet.
+GitHub visibility, GitHub Private Vulnerability Reporting, and the first
+`npm publish` have already been completed under their own explicit
+Human authorizations (Phases 6D-1, 6D-2A, 6D-2B). Git tagging and a
+GitHub Release still require their own explicit user approval; neither
+has been authorized yet.
+
+## Release notes draft — v0.1.0
+
+Factual draft, prepared in Phase 6D-2C for the eventual `v0.1.0` GitHub
+Release; not yet used to create that Release.
+
+**RepoBD v0.1.0**
+
+Initial public release.
+
+Core features:
+
+- repository-bound one-time secret delivery
+- local encryption/decryption (AES-256-GCM, client-side)
+- wrong-repository rejection before any claim or application
+- safe root `.env` apply, with a read-back verification write
+- one `KEY=value` per delivery
+- 900-second (15-minute) delivery TTL
+- one-time consume semantics
+- repository identity support for GitHub, GitLab, and Bitbucket
+- canonical production service: `https://api.repobd.com`
+
+Security/privacy notes:
+
+- the Worker/D1 backend never receives the plaintext secret, the
+  decryption key, or repository identity
+- repository binding is an accidental-misuse guardrail, not
+  authentication against a malicious local actor — see
+  [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md)
+- the supported `.env` subset is intentionally conservative; RepoBD does
+  not guess and does not guarantee equivalent behavior under
+  `source .env`
