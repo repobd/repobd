@@ -1,6 +1,6 @@
 {
   "name": "repobd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI to hand off a secret bound to a Git repository — wrong repo, no secret.",
   "license": "MIT",
   "repository": {
