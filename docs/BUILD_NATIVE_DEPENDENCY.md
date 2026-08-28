@@ -8,6 +8,10 @@ Security correctness comes first, then the smallest maintainable implementation.
 
 ## Initial decisions
 
+This table records the decisions as made during planning, before
+implementation. See "Delivered vs. initial candidate" below for what was
+actually shipped — several initial candidates were not carried through.
+
 | Capability | Preferred approach | Rationale |
 |---|---|---|
 | authenticated encryption | Web Crypto API / native Web Crypto | standard primitive; no custom crypto |
@@ -28,9 +32,28 @@ Security correctness comes first, then the smallest maintainable implementation.
 | repo fact discovery | deterministic local filesystem/code search | local evidence, no server/AI analysis required |
 | logging framework | none initially | minimize exposure and dependencies; log only safe metadata |
 
+## Delivered vs. initial candidate
+
+As shipped in the v0.1.1 release, the runtime dependency set is narrower than
+the initial candidates below:
+
+- **`commander`** — delivered, unchanged from the initial candidate.
+- **`@clack/prompts`** — not delivered. CLI prompts/confirmation use plain
+  stdin/stdout instead; no terminal-UX dependency was added.
+- **`open`** — not delivered. There is no web sender and nothing for the CLI
+  to open in a browser.
+- **`dotenv`** — not delivered. RepoBD deliberately implements no general
+  dotenv parser; `src/apply/env-file.ts` recognizes a conservative,
+  purpose-built single-line `.env` subset instead (see
+  `docs/MVP_REQUIREMENTS.md` §7). A general parser was rejected on purpose,
+  not merely unbuilt.
+
+The shipped runtime dependency is `commander` only.
+
 ## Initial dependency candidates
 
-Runtime/CLI candidates:
+Runtime/CLI candidates, as planned before implementation (see "Delivered vs.
+initial candidate" above for what actually shipped):
 
 - `commander`
 - `@clack/prompts`
@@ -44,7 +67,10 @@ Development candidates:
 - `vitest`
 - Cloudflare Workers Vitest integration package current at implementation time
 
-Web dependencies are selected only after deciding the minimum UI scaffold. Do not assume a separate LP project.
+Web dependencies are selected only after deciding the minimum UI scaffold.
+The current product decision is that the landing page is a separate project
+(`repobd/repobd-lp`), not part of this repository — see `docs/ARCHITECTURE.md`
+and `HANDOVER.md`.
 
 ## Explicit non-default choices
 

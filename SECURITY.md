@@ -2,8 +2,8 @@
 
 ## Supported Versions
 
-Security support currently applies to the `0.1.x` release line, once
-released. No earlier public release exists.
+Security support currently applies to the `0.1.x` release line. The current
+public release is `0.1.1`.
 
 ## Reporting a Vulnerability
 

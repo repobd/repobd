@@ -8,9 +8,11 @@ the secret is retrieved and applied — Git already gives code a repository
 identity, and RepoBD carries that identity along with the handoff instead of
 leaving it to memory and a glance at the terminal title.
 
-**Status: v0.1 release candidate.** The CLI, production Cloudflare
-infrastructure, and a real production end-to-end run are all complete and
-reviewed.
+**Status: v0.1.1 is the current public release.** `repobd@0.1.1` is published
+on npm (`latest`), tagged `v0.1.1` on GitHub, and released as
+[RepoBD v0.1.1](https://github.com/repobd/repobd/releases). The CLI,
+production Cloudflare infrastructure, and a real production end-to-end run
+are all complete and reviewed.
 
 ## Install
 
@@ -25,7 +27,7 @@ npx repobd send
 npx repobd pull
 ```
 
-(pin a version instead with `npx repobd@0.1.0 send` if needed.) The Quick
+(pin a version instead with `npx repobd@0.1.1 send` if needed.) The Quick
 Start below assumes a global install — if you're using `npx` instead,
 replace `repobd` with `npx repobd` in every command.
 
@@ -253,11 +255,13 @@ flag.
 | 4 | Safe local apply, end to end | complete |
 | 5A | CLI sender, local development | complete |
 | 5B | Production integration and real end-to-end | complete |
-| 6 | Release hardening | in progress |
+| 6 | Release hardening | complete |
 
 `repobd pull` and `repobd send` are both implemented and have been proven
 against real production Cloudflare infrastructure, with synthetic test
-data. A web sender and environment metadata are deferred post-v0.1.
+data. RepoBD v0.1.1 is the current public release; core development is
+closed unless a new task is explicitly scoped. A web sender and environment
+metadata are deferred post-v0.1.
 
 ## Security
 

@@ -32,10 +32,11 @@
 - **Mapping / 候補提示** — v0.1 では実装しません。variable name は payload 内に
   含まれるため推測は不要です。本文 §8 の候補提示 UI は現行の動作ではありません。
 - **Environment metadata** — 現行実装には channel 自体が存在しません（本文 §7）。
-  eventual v0.1 リリース前に追加するかどうかは Phase 5 の未決事項であり、
-  決定事項ではありません。
-- **Sender / Web 送信画面** — `repobd send` は未完成です。Web 送信面を MVP に
-  含めるかどうかを含め、Phase 5 の未決事項であり、決定事項ではありません。
+  v0.1.1 は既にリリース済みであり、environment metadata の追加は post-v0.1 の
+  deferred 事項として確定しています。未決事項ではありません。
+- **Sender / Web 送信画面** — `repobd send` は実装済みで、v0.1.1 として
+  リリース済みです。Web 送信面は post-v0.1 として deferred と確定しており、
+  未決事項ではありません。
 - **開発時の役割分担（本文 §14 / §15）** — 現行の governance に置き換えられています。
   下記「現行 governance」を参照してください。
 

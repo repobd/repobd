@@ -6,7 +6,7 @@ Deliver encrypted secret text to the intended repository with minimal friction a
 
 ## 2. Primary user flow
 
-### Sender — CLI implemented (Phase 5A, pending final review/commit gate)
+### Sender — CLI implemented and released (v0.1.1)
 
 `repobd send` accepts a secret, encrypts it locally, creates the delivery and
 prints a usable link. The steps:
@@ -34,10 +34,11 @@ any TTL input surface. The receiver's target is settled: v0.1 always applies to
 `.env` at the verified work-tree root. Any broader target is a future /
 post-v0.1 possibility.
 
-Service origin: `REPOBD_SERVER_URL` when set, otherwise the local-development
-default `http://localhost:8787`. HTTPS is required, with one narrow exception —
-plain HTTP is accepted only for a loopback development origin (`localhost`,
-`127.0.0.1`, `[::1]`). There is no configuration file and no `--server` flag.
+Service origin: `REPOBD_SERVER_URL` when set, otherwise the shipped production
+default `https://api.repobd.com`. HTTPS is required, with one narrow
+exception — plain HTTP is accepted only for a loopback development origin
+(`localhost`, `127.0.0.1`, `[::1]`), reached through the `REPOBD_SERVER_URL`
+override. There is no configuration file and no `--server` flag.
 
 Fixed: client-side encryption only; the server never receives plaintext, the
 key, or repository identity; the key and binding travel in the link fragment.

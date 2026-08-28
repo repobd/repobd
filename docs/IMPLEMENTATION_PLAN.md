@@ -15,11 +15,13 @@ This plan converts the reviewed MVP requirements into small implementation phase
 | 4 | Safe local apply | COMPLETE |
 | 5A | CLI sender, local development only | COMPLETE |
 | 5B | Production integration and real end-to-end | COMPLETE |
-| 6 | Release readiness | IN PROGRESS — 6B/6C-1/6C-2-A/6C-2-B committed, 6C-2-C E2E complete pending final pre-public Codex review / commit gate |
+| 6 | Release readiness | COMPLETE — v0.1.0 and v0.1.1 both released |
 
-Current committed HEAD: `6f7fb607441371bb7cfed19783323051f986b466`,
-`feat: use stable production service origin`. Phase 6C-2-C closure
-documentation is uncommitted work in progress on top of it.
+**RepoBD v0.1.1 is the current public release.** Current release/working
+baseline: `59352f1e3e8d61551872fd8d54d386719fca0d69`, `release: v0.1.1`. See
+`HANDOVER.md` for the current checkpoint; the phase narrative below is
+retained as history of how each phase was delivered, and every phase and
+gate it describes is closed.
 
 The phase descriptions below are kept as written where they still describe what
 was built. Where the delivered scope is narrower than the original sketch —
@@ -292,7 +294,7 @@ matrix confirmed no plaintext synthetic value, decryption key, or
 repository-identity string ever appeared in server storage. Only synthetic
 test data was used throughout; no real credential was ever entered.
 
-## Phase 6 — Release readiness — IN PROGRESS
+## Phase 6 — Release readiness — COMPLETE
 
 Goal: make v0.1 safe and correctly packaged for an external developer to
 discover, install, understand, safely run, evaluate, and report a
@@ -427,8 +429,10 @@ afterward. This repository's working tree was untouched by the E2E
 itself — only this closure documentation is a repository change. No real
 credential was used at any point.
 
-Phase 6D (the actual public release) remains a fully separate, explicitly
-authorized stage behind the Human Public Release Gate.
+Phase 6D (the actual public release) is COMPLETE: the repository is public,
+GitHub Private Vulnerability Reporting is enabled, and `repobd@0.1.0` (later
+superseded by `repobd@0.1.1`) is published to npm with its git tag and
+GitHub Release. See `HANDOVER.md` for the current release checkpoint.
 
 ## Development policy
 

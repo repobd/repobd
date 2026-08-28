@@ -2,27 +2,40 @@
 
 ## Current state
 
-Phase 6C is COMPLETE (including 6C-2-C closure and the superseding
-full-history secret scan), Phase 6D-0 (private manual release rehearsal)
-is COMPLETE, whitespace-validation regression coverage is COMPLETE,
-Phase 6D-1 is COMPLETE, Phase 6D-2A (final npm pre-publish artifact
-alignment) is COMPLETE, and Phase 6D-2B is COMPLETE — all committed. The
-repository is PUBLIC and GitHub Private Vulnerability Reporting is
-ENABLED. **`repobd@0.1.0` has been published to npm** — the `latest`
-dist-tag is `0.1.0`, a clean registry install (`npm install
-repobd@0.1.0`) and an independent `npx repobd@0.1.0 --version` both
-passed, and the installed package boundary was verified as exactly 35
-files (`LICENSE`, `README.md`, `package.json`, `dist/**` only), matching
-shasum `4d41d91cb8557f45cd46761f1516dd52aade6745` / integrity
-`sha512-t2mfLibWBDgAPn3g4Ba64QqBBXDUPOLGLDfalaf3DDwtKQF39gTi82JwYbCkeOvAVdXZErPoDoq1b+rtODDlUQ==`.
-No `v0.1.0` git tag exists yet, and no GitHub Release exists yet; both
-are a separate, not-yet-authorized Human Gate (Phase 6D-2C's own next
-action — this update prepares release-notes text but does not create
-either).
+**RepoBD v0.1.1 is the current public release. Core development is CLOSED
+by default — do not start new feature work without a fresh, explicitly
+scoped Human Gate.**
 
+- npm: `repobd@0.1.1` is published; `latest` dist-tag is `0.1.1`.
+- Git tag `v0.1.1` exists; GitHub Release "RepoBD v0.1.1" exists.
+- GitHub repository `repobd/repobd` is PUBLIC; GitHub Private Vulnerability
+  Reporting is ENABLED.
 - branch: `main`
-- current committed HEAD: `331390b20ecf7c0e824d9c99c2b390f045df7c0f`
-- commit: `docs: align public release security status`
+- release commit / current working baseline: `59352f1e3e8d61551872fd8d54d386719fca0d69`
+- commit message: `release: v0.1.1`
+- Production origin `https://api.repobd.com` is the canonical API origin;
+  the `workers.dev` fallback endpoint remains enabled. Both health
+  endpoints were healthy at v0.1.1 closure.
+- Release validation at closure: 968/968 tests passing across 19 files,
+  typecheck PASS, build PASS, npm package boundary exactly 35 files
+  (`LICENSE`, `README.md`, `package.json`, `dist/**` only).
+- Current priority is usage/onboarding/discoverability/positioning and
+  real-user feedback while v0.1.1 remains stable — not automatic feature
+  expansion. RepoBD is a secret transport + repository context guardrail,
+  not a Secret Manager; repository binding remains an accidental-misuse
+  guardrail, not authentication.
+- LP (landing page) is intentionally a separate project: planned repo
+  `repobd/repobd-lp`. `repobd.com` will point at the LP;
+  `api.repobd.com` stays the production Worker API. Do not put LP
+  implementation in `repobd/repobd`.
+
+The phase history below (Phase 0 through Phase 6D) is retained as historical
+record of how v0.1.0 and then v0.1.1 were built. It is history, not an open
+checklist — every phase and gate it describes is closed. Any statement below
+that reads as "pending", "not yet", or "in progress" describes the state at
+the time that section was written, not the current state; the block above is
+the current checkpoint.
+
 - Phase 5B: COMPLETE. Production D1 created and migrated, Worker deployed
   to `workers.dev` with rate-limit guardrails active, and a real synthetic
   end-to-end matrix run against that production environment (Human Gates
@@ -59,10 +72,11 @@ Repository:
 
 Production Cloudflare resources now exist for RepoBD (Phase 5B — see
 below). The repository is public and GitHub Private Vulnerability
-Reporting is enabled (Phase 6D-1). **`repobd@0.1.0` is published to
-npm** (Phase 6D-2B) — `latest` is `0.1.0`, and a public registry clean
-install has been verified. No `v0.1.0` git tag or GitHub Release exists
-yet; both remain separate, not-yet-authorized Human Gates.
+Reporting is enabled (Phase 6D-1). **`repobd@0.1.1` is the current
+published release on npm** — `latest` is `0.1.1`, the `v0.1.1` git tag
+exists, and the "RepoBD v0.1.1" GitHub Release exists. (`repobd@0.1.0`
+was the initial public release that preceded it; see "Release history"
+below.)
 
 ### Production environment (Phase 5B, updated Phase 6C-2-A)
 
@@ -314,10 +328,10 @@ Authoritative phase plan: `docs/IMPLEMENTATION_PLAN.md`.
   (D1 creation), B (migration + rate-limit activation + deploy + health),
   and C (real synthetic E2E matrix) are all complete, and Codex Review B
   closed at blocker 0 / major 0 / minor 0 / nit 0.
-- **Phase 6 — release readiness.** IN PROGRESS. The Phase 6 audit plan is
+- **Phase 6 — release readiness.** COMPLETE. The Phase 6 audit plan was
   Human-approved: MIT license, manual/2FA first npm publish, a narrow npm
   `files` allowlist, and `api.repobd.com` as the v0.1 production endpoint
-  are all settled decisions.
+  are all settled decisions, and v0.1.1 is now the current public release.
   **Phase 6B — local release artifact preparation — COMPLETE**, reviewed
   at Codex review (blocker 0 / major 0 / minor 0 / nit 0) and committed.
   `package.json` carries `version: "0.1.0"`, no `private`, a CLI-only
@@ -404,39 +418,30 @@ Phases 0–4 each closed with a Codex security review at blocker 0 / major 0.
 
 ## Known open items
 
-- **Phase 6D-2C documentation checkpoint (this update) is uncommitted,
-  pending Human review.** It records the successful `repobd@0.1.0` npm
-  publication and drafts `v0.1.0` release notes; only this documentation
-  update remains to be reviewed and committed.
-- **`v0.1.0` git tag and GitHub Release have not been created.** npm
-  `repobd@0.1.0` is published, but tagging and the GitHub Release remain
-  a separate, explicit Human authorization.
 - **Deferred post-v0.1 by decision, not omission:** a web sender and any
   environment metadata channel. There is no TTL flag and no `--server` flag,
   and neither is planned for v0.1.
-- **Release documentation — largely addressed by Phase 6B/6C, still not
-  fully complete.** The v0.1 boundaries — one `KEY=value` per delivery,
-  the conservative `.env` subset, and the absence of a shell-`source`
-  guarantee — are stated in `README.md` and `docs/MVP_REQUIREMENTS.md`,
-  and are recorded as marked release requirements in the module headers of
-  `src/apply/payload.ts`, `env-file.ts` and `target.ts`. `SECURITY.md` and
-  a `README.md` install/quick-start pass are committed as of Phase 6B.
-  Still missing: privacy/terms for the hosted service. `SECURITY.md`
-  now points reporters at GitHub Private Vulnerability Reporting, which
-  is enabled as of Phase 6D-1. The repository is public and
-  `repobd@0.1.0` is published to npm, so this is no longer pre-public
-  prep — it is ongoing post-release documentation work, not on a fixed
-  deadline.
+- **Privacy/terms for the hosted service are still missing.** Everything
+  else in the Phase 6B/6C release-documentation pass (v0.1 boundaries in
+  `README.md`/`docs/MVP_REQUIREMENTS.md`, `SECURITY.md`, the module-header
+  release-requirement notes in `src/apply/payload.ts`, `env-file.ts` and
+  `target.ts`) is complete. This is ongoing post-release documentation
+  work, not on a fixed deadline, and not a blocker to the v0.1.1 release
+  that already shipped.
 - **`cli.smoke.test.ts` is load-sensitive.** Both of its cases spawn
   `npx tsx src/cli/index.ts` with no per-test timeout, against vitest's 5s
   default. One local full-suite run has failed on it under load; it has not
   failed in CI. Phase 0 code, untouched since. Fixing it needs its own
   authorized cycle.
-- **Production infrastructure, GitHub, and npm are all now public
-  (Phases 6D-1/6D-2A/6D-2B).** `repobd-production` D1 and the
-  `repobd-worker` Worker are live at both `api.repobd.com` and
-  `workers.dev` (see "Phase status" above); `repobd@0.1.0` is published
-  to npm. Only `v0.1.0` tagging and a GitHub Release remain.
+- **Production infrastructure, GitHub, and npm are all public and
+  released.** `repobd-production` D1 and the `repobd-worker` Worker are
+  live at both `api.repobd.com` and `workers.dev` (see "Phase status"
+  above); `repobd@0.1.1` is published to npm, tagged `v0.1.1`, and has a
+  GitHub Release. No release-mechanics item is outstanding.
+- **Core development is closed by default.** No feature expansion,
+  dependency change, or scope change is authorized by this document alone.
+  The next unit of repository work — whatever it is — requires a fresh,
+  explicitly scoped Human Gate; see "Next action" below.
 
 ## Development workflow
 
@@ -454,27 +459,34 @@ polls for them. Every new write cycle needs explicit user authorization. See
 
 ## Next action
 
-1. Human commit gate: decide whether to commit this Phase 6D-2C
-   documentation checkpoint (`HANDOVER.md`).
-2. Creating the `v0.1.0` git tag and a GitHub Release remains a separate,
-   explicitly authorized Human Gate — not implied by this cycle.
+RepoBD v0.1.1 is released and core development is closed by default. There
+is no pending release-mechanics action: npm publish, git tag, and GitHub
+Release are all complete for v0.1.1.
 
-GitHub visibility, GitHub Private Vulnerability Reporting, and the first
-`npm publish` have already been completed under their own explicit
-Human authorizations (Phases 6D-1, 6D-2A, 6D-2B). Git tagging and a
-GitHub Release still require their own explicit user approval; neither
-has been authorized yet.
+The next unit of repository work is not implied by this document. A fresh
+agent should:
 
-## Release notes draft — v0.1.0
+1. Treat `59352f1e3e8d61551872fd8d54d386719fca0d69` (`release: v0.1.1`) as
+   the working baseline.
+2. Wait for an explicitly scoped Human Gate before any new implementation,
+   dependency change, or feature work — current priority is
+   usage/onboarding/discoverability/positioning and real-user feedback
+   while v0.1.1 remains stable, not automatic feature expansion.
 
-Factual draft, prepared in Phase 6D-2C for the eventual `v0.1.0` GitHub
-Release; not yet used to create that Release.
+## Release history
 
-**RepoBD v0.1.0**
+**v0.1.1** — current release. Tagged `v0.1.1`, published to npm as
+`repobd@0.1.1` (`latest`), and released as "RepoBD v0.1.1" on GitHub.
+Release commit: `59352f1e3e8d61551872fd8d54d386719fca0d69`.
 
-Initial public release.
+**v0.1.0** — initial public release, superseded by v0.1.1. Tagged `v0.1.0`
+and published to npm as `repobd@0.1.0`. v0.1.1's actual delta over v0.1.0 is
+first-use CLI/README UX polish (`docs: improve first-use CLI and README
+UX`, `0b064a1`) plus the version bump — no product-behavior, security, or
+protocol change.
 
-Core features:
+Initial public release (v0.1.0) core features, unchanged in v0.1.1 unless
+noted elsewhere in this document:
 
 - repository-bound one-time secret delivery
 - local encryption/decryption (AES-256-GCM, client-side)
@@ -486,7 +498,7 @@ Core features:
 - repository identity support for GitHub, GitLab, and Bitbucket
 - canonical production service: `https://api.repobd.com`
 
-Security/privacy notes:
+Security/privacy notes, still current:
 
 - the Worker/D1 backend never receives the plaintext secret, the
   decryption key, or repository identity

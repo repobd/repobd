@@ -44,8 +44,11 @@ Recorded as the original sketch, should a web surface be built later:
 Environment metadata is deferred post-v0.1 as well; no such channel exists. The
 receiver's target is settled, not deferred: v0.1
 always applies to `.env` at the verified work-tree root, and a sender-selected
-target is a future / post-v0.1 possibility at most. If a web surface is built, the landing page and product UI should
-live in the same project rather than a separate repository.
+target is a future / post-v0.1 possibility at most. The landing page/product
+UI is intentionally kept out of this repository: the planned LP lives in a
+separate `repobd/repobd-lp` repository, with `repobd.com` pointing at the LP
+and `api.repobd.com` remaining the production Worker API. Do not put LP
+implementation in `repobd/repobd`.
 
 ### Worker API
 
@@ -131,8 +134,8 @@ serves the Worker over HTTP on the developer's own machine. Embedded
 credentials are refused under either scheme. One policy in `src/cli/link.ts`
 decides this for both the link builder and the link parser, so `send` cannot
 produce a link `pull` would refuse. The CLI's own service origin is resolved
-from `REPOBD_SERVER_URL`, or the local-development default
-`http://localhost:8787`, and is held to the same policy — a value carrying a
+from `REPOBD_SERVER_URL`, or the shipped production default
+`https://api.repobd.com`, and is held to the same policy — a value carrying a
 path, a query, a fragment or credentials is refused rather than trimmed into
 shape.
 
